@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0"?>
 <Container version="2">
-  <Name>phev-1</Name>
+  <Name>phev</Name>
   <Repository>hstefan/phev:0.9.20</Repository>
   <Registry>https://hub.docker.com/r/hstefan/phev/</Registry>
   <Network>br0.308</Network>
@@ -12,7 +12,6 @@
   <Overview>
     Unraid test image for phev connection&#xD;
     &#xD;
-    Converted By Community Applications   Always verify this template (and values)  against the support page for the container&#xD;
     &#xD;
     https://hub.docker.com/r/hstefan/phev/
   </Overview>
