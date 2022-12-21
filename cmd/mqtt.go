@@ -191,12 +191,6 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			if time.Now().Sub(m.lastConnect) > 30*time.Second {
 				m.publish("/available", "offline")
 			}
-			// Restart Wifi interface if > wifi_restart_time.
-			if wifiRestartTime > 0 && time.Now().Sub(m.lastConnect) > wifiRestartTime {
-				if err := restartWifi(cmd); err != nil {
-					log.Errorf("Error restarting wifi: %v", err)
-				}
-			}
 		}
 
 		time.Sleep(time.Second)
