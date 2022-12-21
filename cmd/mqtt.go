@@ -154,7 +154,6 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	wifiRestartTime, err := cmd.Flags().GetDuration("wifi_restart_time")
 	if err != nil {
 		return err
 	}
