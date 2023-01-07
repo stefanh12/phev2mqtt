@@ -5,10 +5,11 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/buxtronix/phev2mqtt/protocol"
 )
@@ -143,7 +144,7 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-var startTimeout = 20 * time.Second
+var startTimeout = 5 * time.Second
 
 // Start waits for the client to start.
 func (c *Client) Start() error {
