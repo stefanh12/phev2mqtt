@@ -133,11 +133,6 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	connectionPollPeriod, err := time.ParseDuration("30m")
-	if err != nil {
-		return err
-	}
-
 	m.options = mqtt.NewClientOptions().
 		AddBroker(mqttServer).
 		SetClientID("phev2mqtt").
