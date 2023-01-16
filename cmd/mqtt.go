@@ -19,7 +19,6 @@ package cmd
 import (
 	"encoding/hex"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
