@@ -154,12 +154,17 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	m.mqttData = map[string]string{}
-
+        sleeptime = time.Second
 	for {
 		if m.enabled {
 			if err := m.handlePhev(cmd); err != nil {
+				sleeptime = time.Second * 10
 				log.Error(err)
+			} else {
+				sleeptime = time.Second
 			}
+			
+			
 			// Publish as offline if last connection was >30s ago.
 			if time.Now().Sub(m.lastConnect) > 10*time.Second {
 				m.publish("/available", "offline")
