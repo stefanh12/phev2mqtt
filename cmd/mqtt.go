@@ -158,7 +158,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	for {
 		if m.enabled {
 			if err := m.handlePhev(cmd); err != nil {
-				sleeptime = time.Second * 10
+				sleeptime = 10*time.Second
 				log.Error(err)
 			} else {
 				sleeptime = time.Second
@@ -171,7 +171,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			}
 			
 		}
-		time.Sleep(time.Second)
+		time.Sleep(sleeptime)
 	}
 }
 
