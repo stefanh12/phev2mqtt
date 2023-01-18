@@ -5,14 +5,17 @@ export CONNECT_mqtt_server=$mqtt_server
 export CONNECT_mqtt_user=$mqtt_user
 export CONNECT_mqtt_password=$mqtt_password
 export CONNECT_route_add=$route_add
+export CONNECT_extra_add=$extra_add
+
 
 echo "Using the following environment variables:"
 echo "debug=$CONNECT_DEBUG"
 echo "phev_register=$CONNECT_phev_register"
 echo "mqtt_server=$CONNECT_mqtt_server"
-echo "mqtt_user=$CONNECT_mqtt_user"
-echo "mqtt_password=$CONNECT_mqtt_password"
+#echo "mqtt_user=$CONNECT_mqtt_user"
+#echo "mqtt_password=$CONNECT_mqtt_password"
 echo "route_add=$CONNECT_route_add"
+echo "extra_add=$CONNECT_extra_add"
 
 
 
@@ -56,5 +59,7 @@ else
         mqtt \
         --mqtt_server "tcp://$CONNECT_mqtt_server/" \
         --mqtt_username "$CONNECT_mqtt_user" \
-        --mqtt_password "$CONNECT_mqtt_password"
+        --mqtt_password "$CONNECT_mqtt_password" \
+        $CONNECT_extra_add
+
 fi
