@@ -734,6 +734,34 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`,
+		// General topics.
+		"%s/button/%s_off_wifi/config": `{
+		"name": "__NAME__ off Wifi connetion",
+		"icon": "mdi:timer-off",
+		"command_topic": "~/connection",
+		"payload_press": "off",
+		"unique_id": "__VIN___off_wifi",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		// General topics.
+		"%s/button/%s_on_wifi/config": `{
+		"name": "__NAME__ on Wifi connetion",
+		"icon": "mdi:timer-off",
+		"command_topic": "~/connection",
+		"payload_press": "on",
+		"unique_id": "__VIN___on_wifi",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},		
+		"~": "__TOPIC__"}`,
 	}
 	mappings := map[string]string{
 		"__NAME__":  name,
