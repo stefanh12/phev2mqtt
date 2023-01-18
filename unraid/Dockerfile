@@ -11,6 +11,7 @@ RUN apk update && apk add --no-cache \
 RUN git clone https://github.com/stefanh12/phev2mqtt.git
 COPY --from=golang:alpine /usr/local/go/ /usr/local/go/
 
+
 COPY . .
 RUN cd /usr/src/app/phev2mqtt && \
     /usr/local/go/bin/go build
@@ -25,6 +26,7 @@ ENV  mqtt_user user
 ENV  mqtt_password password
 ENV  phev_register false
 ENV  debug true
+ENV  extraarg true
 
 
 ENTRYPOINT ["bash", "./entrypoint.sh"]
