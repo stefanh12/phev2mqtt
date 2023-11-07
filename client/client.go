@@ -50,6 +50,14 @@ func (l *Listener) ProcessStop() bool {
 	return false
 }
 
+type ModelYear int64
+
+const (
+	ModelYearUnknown ModelYear = iota
+	ModelYear14
+	ModelYear18
+)
+
 // A Client is a TCP client to a Phev.
 type Client struct {
 	// Recv is a channel where incoming messages from the Phev are sent.
@@ -66,6 +74,9 @@ type Client struct {
 	started chan struct{}
 
 	key *protocol.SecurityKey
+
+	// Keep track of the model year so we can use the correct registers
+	ModelYear ModelYear
 
 	closed bool
 }
@@ -89,6 +100,7 @@ func New(opts ...Option) (*Client, error) {
 		listeners: []*Listener{},
 		address:   DefaultAddress,
 		key:       &protocol.SecurityKey{},
+		ModelYear: ModelYearUnknown,
 	}
 	for _, o := range opts {
 		o(cl)
@@ -120,6 +132,7 @@ func (c *Client) RemoveListener(l *Listener) {
 
 // Close closes the client.
 func (c *Client) Close() error {
+	log.Info("Client closing.")
 	c.closed = true
 	if c.conn == nil {
 		return nil
@@ -178,7 +191,7 @@ func (c *Client) SetRegister(register byte, value []byte) error {
 		}
 	}
 	xor := byte(0)
-	timer := time.After(10 * time.Second)
+	timer := time.After(3 * time.Second)
 	l := c.AddListener()
 	defer c.RemoveListener(l)
 SETREG:
@@ -186,16 +199,20 @@ SETREG:
 	for {
 		select {
 		case <-timer:
+			c.Close()
 			return fmt.Errorf("timed out attempting to set register %02x", register)
 		case msg, ok := <-l.C:
 			if !ok {
+				c.Close()
 				return fmt.Errorf("listener channel closed")
 			}
 			if msg.Type == protocol.CmdInBadEncoding {
 				xor = msg.Data[0]
+				c.Close()
 				goto SETREG
 			}
 			if msg.Type == protocol.CmdInResp && msg.Ack == protocol.Ack && msg.Register == register {
+				log.Info("Settinge register successfull.")
 				return nil
 			}
 
@@ -258,6 +275,7 @@ func (c *Client) manage() {
 				Xor:      m.Xor,
 			}
 		case protocol.CmdInMy18StartReq:
+			c.ModelYear = ModelYear18
 			c.Send <- &protocol.PhevMessage{
 				Type:     protocol.CmdOutMy18StartResp,
 				Register: 0x1,
@@ -268,6 +286,7 @@ func (c *Client) manage() {
 			log.Debug("%%PHEV_START18_RECV%%")
 			c.started <- struct{}{}
 		case protocol.CmdInMy14StartReq:
+			c.ModelYear = ModelYear14
 			c.Send <- &protocol.PhevMessage{
 				Type:     protocol.CmdOutMy14StartResp,
 				Register: 0x1,

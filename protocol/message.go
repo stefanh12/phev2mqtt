@@ -76,7 +76,7 @@ func (p *PhevMessage) ShortForm() string {
 		return fmt.Sprintf("START SEND18  (orig  %s)", hex.EncodeToString(p.Original))
 
 	case CmdInStartResp:
-		return fmt.Sprintf("START RESP18  (orig: %s)", hex.EncodeToString(p.Original))
+		return fmt.Sprintf("START RESP    (orig: %s)", hex.EncodeToString(p.Original))
 
 	case CmdOutSend:
 		if p.Ack == Ack {
@@ -94,13 +94,13 @@ func (p *PhevMessage) ShortForm() string {
 		return fmt.Sprintf("START RECV18  (orig %s)", hex.EncodeToString(p.Original))
 
 	case CmdOutMy18StartResp:
-		return fmt.Sprintf("START SEND    (orig %s)", hex.EncodeToString(p.Original))
+		return fmt.Sprintf("START SEND18  (orig %s)", hex.EncodeToString(p.Original))
 
 	case CmdInMy14StartReq:
-		return fmt.Sprintf("START RECV 14 (orig %s)", hex.EncodeToString(p.Original))
+		return fmt.Sprintf("START RECV14  (orig %s)", hex.EncodeToString(p.Original))
 
 	case CmdOutMy14StartResp:
-		return fmt.Sprintf("START SEND 14 (orig %s)", hex.EncodeToString(p.Original))
+		return fmt.Sprintf("START SEND14  (orig %s)", hex.EncodeToString(p.Original))
 
 	case CmdInBadEncoding:
 		return fmt.Sprintf("BAD ENCODING  (exp: 0x%02x)", p.Data[0])
@@ -126,7 +126,7 @@ func (p *PhevMessage) EncodeToBytes(key *SecurityKey) []byte {
 	data = append(data, Checksum(data))
 	var xor byte
 	switch p.Type {
-	case CmdInMy18StartReq, CmdOutMy18StartResp:
+	case CmdInMy18StartReq, CmdOutMy18StartResp, CmdInMy14StartReq, CmdOutMy14StartResp:
 		// No xor/key for these messages.
 	case CmdOutSend:
 		// Use then increment send key.
@@ -234,15 +234,18 @@ func NewFromBytes(data []byte, key *SecurityKey) []*PhevMessage {
 }
 
 const (
-	VINRegister            = 0x15
-	ECUVersionRegister     = 0xc0
-	BatteryLevelRegister   = 0x1d
-	BatteryWarningRegister = 0x02
-	DoorStatusRegister     = 0x24
-	ChargeStatusRegister   = 0x1f
-	ACOperStatusRegister   = 0x1a
-	ACModeRegister         = 0x1c
-	ChargePlugRegister     = 0x1e
+	VINRegister              = 0x15
+	ECUVersionRegister       = 0xc0
+	BatteryLevelRegister     = 0x1d
+	BatteryWarningRegister   = 0x02
+	DoorStatusRegister       = 0x24
+	ChargeStatusRegister     = 0x1f
+	ACOperStatusRegister     = 0x1a
+	SetACEnabledRegisterMY14 = 0x04
+	SetACModeRegisterMY14    = 0x02
+	SetACModeRegisterMY18    = 0x1b
+	ACModeRegister           = 0x1c
+	ChargePlugRegister       = 0x1e
 )
 
 type Register interface {
@@ -452,18 +455,9 @@ func (r *RegisterChargeStatus) Decode(m *PhevMessage) {
 		return
 	}
 	r.Charging = m.Data[0] == 0x1
-	if r.Charging {
-		high := int(m.Data[1])
-		low := int(m.Data[2])
-		if low < 0 {
-			low += 0x100
-		}
-		low *= 0x100
-
-		if high < 0 {
-			high += 0x100
-		}
-		r.Remaining = low + high
+	r.Remaining = 0
+	if m.Data[2] != 0xff {
+		r.Remaining = int(m.Data[2])<<8 | int(m.Data[1])
 	}
 	r.raw = m.Data
 }
@@ -489,10 +483,11 @@ type RegisterACOperStatus struct {
 }
 
 func (r *RegisterACOperStatus) Decode(m *PhevMessage) {
-	if m.Register != ACOperStatusRegister || len(m.Data) != 5 {
+	// MY'18 data length is 5 bytes, MY'14 uses 2 bytes
+	// We only decode the operating state in byte 2
+	if m.Register != ACOperStatusRegister || len(m.Data) < 2 {
 		return
 	}
-	// reg 0x1a data 0001000000 // on
 	r.Operating = m.Data[1] == 1
 	r.raw = m.Data
 }
@@ -513,15 +508,16 @@ func (r *RegisterACOperStatus) Register() byte {
 }
 
 type RegisterACMode struct {
-	Mode string
-	raw  []byte
+	Mode     string
+	Duration uint8
+	raw      []byte
 }
 
 func (r *RegisterACMode) Decode(m *PhevMessage) {
 	if len(m.Data) != 1 {
 		return
 	}
-	switch m.Data[0] {
+	switch m.Data[0] & 0x0f {
 	case 0:
 		r.Mode = "unknown"
 	case 1, 0x11:
@@ -530,6 +526,14 @@ func (r *RegisterACMode) Decode(m *PhevMessage) {
 		r.Mode = "heat"
 	case 3, 0x13:
 		r.Mode = "windscreen"
+	}
+	switch m.Data[0] & 0xf0 {
+	case 0x00:
+		r.Duration = 10
+	case 0x10:
+		r.Duration = 20
+	case 0x20:
+		r.Duration = 30
 	}
 	r.raw = m.Data
 }

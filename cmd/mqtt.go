@@ -17,8 +17,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package cmd
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -30,6 +32,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const defaultWifiRestartCmd = "sudo ip link set wlan0 down && sleep 3 && sudo ip link set wlan0 up"
+const defaultWifiEnableCmd = "sudo ip link set wlan0 up"
+const defaultWifiDisableCmd = "sudo ip link set wlan0 down"
 const carBatterySizeKWh = 13.8
 const carChargeRateKWh = 2.5
 
@@ -89,9 +94,53 @@ func (c *climate) ready() bool {
 	return c.mode != nil && c.state != nil
 }
 
+var lastWifiRestart time.Time
 
+func restartWifi(cmd *cobra.Command) error {
+	restartRetryTime, err := cmd.Flags().GetDuration("wifi_restart_retry_time")
+	if err != nil {
+		return err
+	}
+	if time.Now().Sub(lastWifiRestart) < restartRetryTime {
+		return nil
+	}
+	defer func() {
+		lastWifiRestart = time.Now()
+	}()
 
+	restartCommand, _ := cmd.Flags().GetString("wifi_restart_command")
+	if restartCommand == "" {
+		log.Debugf("wifi restart disabled")
+		return nil
+	}
 
+	log.Infof("Attempting to restart wifi")
+
+	restartCmd := exec.Command("sh", "-c", restartCommand)
+
+	stdoutStderr, err := restartCmd.CombinedOutput()
+	log.Infof("Output from wifi restart: %s", stdoutStderr)
+	return err
+}
+
+func enableWifi() error {
+	log.Infof("Attempting to enable wifi")
+
+	enableCmd := exec.Command("sh", "-c", defaultWifiEnableCmd)
+
+	stdoutStderr, err := enableCmd.CombinedOutput()
+	log.Infof("Output from wifi enable: %s", stdoutStderr)
+	return err
+}
+func disableWifi() error {
+	log.Infof("Attempting to disable wifi")
+
+	disableCmd := exec.Command("sh", "-c", defaultWifiDisableCmd)
+
+	stdoutStderr, err := disableCmd.CombinedOutput()
+	log.Infof("Output from wifi disable: %s", stdoutStderr)
+	return err
+}
 
 type mqttClient struct {
 	client         mqtt.Client
@@ -131,6 +180,14 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	wifiRestartTime, err := cmd.Flags().GetDuration("wifi_restart_time")
+	if err != nil {
+		return err
+	}
+	connectionPollPeriod, err := time.ParseDuration("30m")
+	if err != nil {
+		return err
+	}
 
 	m.options = mqtt.NewClientOptions().
 		AddBroker(mqttServer).
@@ -154,24 +211,33 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	m.mqttData = map[string]string{}
-        var sleeptime = time.Second
+
 	for {
 		if m.enabled {
 			if err := m.handlePhev(cmd); err != nil {
-				sleeptime = 10*time.Second
 				log.Error(err)
-			} else {
-				sleeptime = time.Second
 			}
-			
-			
 			// Publish as offline if last connection was >30s ago.
-			if time.Now().Sub(m.lastConnect) > 10*time.Second {
-				m.publish("/available", "offline")
+			if time.Now().Sub(m.lastConnect) > 30*time.Second {
+				m.client.Publish(m.topic("/available"), 0, true, "offline")
 			}
-			
+			// Restart Wifi interface if > wifi_restart_time.
+			if wifiRestartTime > 0 && time.Now().Sub(m.lastConnect) > wifiRestartTime {
+				if err := restartWifi(cmd); err != nil {
+					log.Errorf("Error restarting wifi: %v", err)
+				}
+			}
 		}
-		time.Sleep(sleeptime)
+
+		if connectionPollPeriod > 0 && time.Now().Sub(m.lastConnect) > connectionPollPeriod {
+			log.Infof("Last connection too long ago")
+			if err := enableWifi(); err != nil {
+				log.Errorf("Error disabling wifi: %v", err)
+			}
+			m.enabled = true
+		}
+
+		time.Sleep(time.Second)
 	}
 }
 
@@ -182,7 +248,7 @@ func (m *mqttClient) publish(topic, payload string) {
 	}
 }
 
-func (m *mqttClient) handleIncomingMqtt(client mqtt.Client, msg mqtt.Message) {
+func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Message) {
 	log.Infof("Topic: [%s] Payload: [%s]", msg.Topic(), msg.Payload())
 
 	topicParts := strings.Split(msg.Topic(), "/")
@@ -209,14 +275,16 @@ func (m *mqttClient) handleIncomingMqtt(client mqtt.Client, msg mqtt.Message) {
 		payload := strings.ToLower(string(msg.Payload()))
 		switch payload {
 		case "off":
+			disableWifi()
 			m.enabled = false
 			m.phev.Close()
-			m.publish("/available", "offline")
+			m.client.Publish(m.topic("/available"), 0, true, "offline")
 		case "on":
+			enableWifi()
 			m.enabled = true
 		case "restart":
 			m.enabled = true
-			m.publish("/available", "offline")
+			m.client.Publish(m.topic("/available"), 0, true, "offline")
 			m.phev.Close()
 		}
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
@@ -251,7 +319,6 @@ func (m *mqttClient) handleIncomingMqtt(client mqtt.Client, msg mqtt.Message) {
 		modeMap := map[string]byte{"off": 0x0, "OFF": 0x0, "cool": 0x1, "heat": 0x2, "windscreen": 0x3, "mode": 0x4}
 		durMap := map[string]byte{"10": 0x0, "20": 0x10, "30": 0x20, "on": 0x0, "off": 0x0}
 		parts := strings.Split(topic, "/")
-		state := byte(0x02) // initial.
 		mode, ok := modeMap[parts[len(parts)-1]]
 		if !ok {
 			log.Errorf("Unknown climate mode: %s", parts[len(parts)-1])
@@ -269,12 +336,36 @@ func (m *mqttClient) handleIncomingMqtt(client mqtt.Client, msg mqtt.Message) {
 			log.Errorf("Unknown climate duration: %s", payload)
 			return
 		}
-		if mode == 0x0 {
-			state = 0x1
-		}
-		if err := m.phev.SetRegister(0x1b, []byte{state, mode, duration, 0x0}); err != nil {
-			log.Infof("Error setting register 0x1b: %v", err)
-			return
+
+		if m.phev.ModelYear == client.ModelYear14 {
+			// Set the AC mode first
+			registerPayload := bytes.Repeat([]byte{0xff}, 15)
+			registerPayload[0] = 0x0
+			registerPayload[1] = 0x0
+			registerPayload[6] = mode | duration
+			if err := m.phev.SetRegister(protocol.SetACModeRegisterMY14, registerPayload); err != nil {
+				log.Infof("Error setting AC mode: %v", err)
+				return
+			}
+
+			// Then, enable/disable the AC
+			acEnabled := byte(0x02)
+			if mode == 0x0 {
+				acEnabled = 0x01
+			}
+			if err := m.phev.SetRegister(protocol.SetACEnabledRegisterMY14, []byte{acEnabled}); err != nil {
+				log.Infof("Error setting AC enabled state: %v", err)
+				return
+			}
+		} else if m.phev.ModelYear == client.ModelYear18 {
+			state := byte(0x02)
+			if mode == 0x0 {
+				state = 0x1
+			}
+			if err := m.phev.SetRegister(protocol.SetACModeRegisterMY18, []byte{state, mode, duration, 0x0}); err != nil {
+				log.Infof("Error setting AC mode: %v", err)
+				return
+			}
 		}
 	} else {
 		log.Errorf("Unknown topic from mqtt: %s", msg.Topic())
@@ -301,7 +392,7 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	uodateTime := time.Now().Format(time.RFC822)
 	m.publish("/last-connection-time", uodateTime)
 	m.client.Publish(m.topic("/last-connection-time"), 2, true, uodateTime)
-
+	
 	defer func() {
 		m.lastConnect = time.Now()
 	}()
@@ -321,6 +412,9 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 
 		if time.Now().Sub(m.sessionStartTime) > maxSessionTime {
 			log.Infof("Session timeout")
+			if err := disableWifi(); err != nil {
+				log.Errorf("Error disabling wifi: %v", err)
+			}
 			m.phev.Close()
 			updaterTicker.Stop()
 
@@ -412,6 +506,7 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 		m.publish("/door/boot", boolOpen[reg.Boot])
 		m.publish("/lights/head", boolOnOff[reg.Headlights])
 	case *protocol.RegisterBatteryLevel:
+		m.publish("/lights/parking", boolOnOff[reg.ParkingLights])
 		if reg.Level < 6 || reg.Level == 255 {
 			break
 		}
@@ -421,7 +516,6 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 		m.publish("/battery/level_kwh", fmt.Sprintf("%f", remainingChargeKWh))
 		m.publish("/charge/time_to_full", fmt.Sprintf("%f", projectedTimeToFullCharge))
 
-		m.publish("/lights/parking", boolOnOff[reg.ParkingLights])
 	case *protocol.RegisterChargePlug:
 		if reg.Connected {
 			m.publish("/charge/plug", "connected")
@@ -734,34 +828,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`,
-		// General topics.
-		"%s/button/%s_off_wifi/config": `{
-		"name": "__NAME__ off Wifi connetion",
-		"icon": "mdi:timer-off",
-		"command_topic": "~/connection",
-		"payload_press": "off",
-		"unique_id": "__VIN___off_wifi",
-		"dev": {
-			"name": "PHEV __VIN__",
-			"identifiers": ["phev-__VIN__"],
-			"manufacturer": "Mitsubishi",
-			"model": "Outlander PHEV"
-		},
-		"~": "__TOPIC__"}`,
-		// General topics.
-		"%s/button/%s_on_wifi/config": `{
-		"name": "__NAME__ on Wifi connetion",
-		"icon": "mdi:timer-off",
-		"command_topic": "~/connection",
-		"payload_press": "on",
-		"unique_id": "__VIN___on_wifi",
-		"dev": {
-			"name": "PHEV __VIN__",
-			"identifiers": ["phev-__VIN__"],
-			"manufacturer": "Mitsubishi",
-			"model": "Outlander PHEV"
-		},		
-		"~": "__TOPIC__"}`,
 	}
 	mappings := map[string]string{
 		"__NAME__":  name,
@@ -797,5 +863,7 @@ func init() {
 	mqttCmd.Flags().Bool("ha_discovery", true, "Enable Home Assistant MQTT discovery")
 	mqttCmd.Flags().String("ha_discovery_prefix", "homeassistant", "Prefix for Home Assistant MQTT discovery")
 	mqttCmd.Flags().Duration("update_interval", 30*time.Second, "How often to request force updates")
-
+	mqttCmd.Flags().Duration("wifi_restart_time", 0, "Attempt to restart Wifi if no connection for this long")
+	mqttCmd.Flags().Duration("wifi_restart_retry_time", 2*time.Minute, "Interval to attempt Wifi restart")
+	mqttCmd.Flags().String("wifi_restart_command", defaultWifiRestartCmd, "Command to restart Wifi connection to Phev")
 }
