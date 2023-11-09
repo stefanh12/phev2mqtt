@@ -223,12 +223,15 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			//disableWifi()
 			m.enabled = false
 			m.phev.Close()
+			log.Infof("wifi off")
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
 		case "on":
 			//enableWifi()
+			log.Infof("wifi on")
 			m.enabled = true
 		case "restart":
 			m.enabled = true
+			log.Infof("wifi restart")
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
 			m.phev.Close()
 		}
