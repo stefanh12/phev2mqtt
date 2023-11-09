@@ -8,7 +8,10 @@ Max connection time has been removed since it was meant to handle wifi issues th
 
 Tested against a MY20 vehicle
 
+*Routeros config 
+https://github.com/stefanh12/phev2mqtt/blob/master/routeros.md 
 
-
+*unraid
+https://github.com/stefanh12/phev2mqtt/blob/master/unraid/XMLFile1.xml
 
 
