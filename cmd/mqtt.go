@@ -104,8 +104,8 @@ type mqttClient struct {
 	phev             *client.Client
 	lastConnect      time.Time
 	sessionStartTime time.Time
-
-	prefix string
+	wifiConnected    bool
+	prefix           string
 
 	haDiscovery       bool
 	haDiscoveryPrefix string
@@ -178,7 +178,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 		if connectionPollPeriod > 0 && time.Now().Sub(m.lastConnect) > connectionPollPeriod {
 			log.Infof("Last connection too long ago")
-
+			time.Sleep(time.Second * 60)
 			m.enabled = true
 		}
 
