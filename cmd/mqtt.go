@@ -133,7 +133,6 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	wifiRestartTime, err := cmd.Flags().GetDuration("wifi_restart_time")
 	if err != nil {
 		return err
 	}
@@ -347,7 +346,6 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	var encodingErrorCount = 0
 	var lastEncodingError time.Time
 
-	maxSessionTime, err := time.ParseDuration("2m")
 	if err != nil {
 		return err
 	}
