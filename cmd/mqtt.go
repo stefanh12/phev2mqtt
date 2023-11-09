@@ -179,7 +179,8 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		if connectionPollPeriod > 0 && time.Now().Sub(m.lastConnect) > connectionPollPeriod {
 			log.Infof("Last connection too long ago")
 			time.Sleep(time.Second * 60)
-			m.enabled = true
+			m.enabled = false
+			m.phev.Close()
 		}
 
 		time.Sleep(time.Second)
