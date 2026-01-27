@@ -18,8 +18,8 @@ RUN cd /usr/src/app/phev2mqtt && \
 RUN apk update && apk add --no-cache \
 	libpcap-dev
 
-# COPY ./entrypoint.sh /
-RUN chmod +x ./entrypoint.sh
+COPY unraid/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV  mqtt_server 192.168.1.1:1883
 ENV  mqtt_user user
@@ -29,4 +29,4 @@ ENV  debug true
 ENV  extraarg true
 
 
-ENTRYPOINT ["bash", "./entrypoint.sh"]
+ENTRYPOINT ["bash", "/entrypoint.sh"]
