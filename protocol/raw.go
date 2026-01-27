@@ -2,16 +2,40 @@ package protocol
 
 import (
 	"encoding/hex"
-	"fmt"
 	log "github.com/sirupsen/logrus"
+	"math/rand"
+)
+
+type SecurityState int
+
+const (
+	SecurityEmpty = iota
+	SecurityKeyProposed
+	SecurityKeyAccepted
 )
 
 // SecurityKey implements the algorithm for the session encoding/decoding
 // keys.
 type SecurityKey struct {
+	State       SecurityState
+	proposedKey []byte
 	securityKey byte
 	keyMap      []byte
 	sNum, rNum  byte
+}
+
+func (s *SecurityKey) GenerateProposal() []byte {
+	s.proposedKey = make([]byte, 8)
+	for i := 0; i < 8; i++ {
+		s.proposedKey[i] = byte(rand.Intn(256))
+	}
+	s.State = SecurityKeyProposed
+	return s.proposedKey
+}
+
+func (s *SecurityKey) AcceptProposal() {
+	s.Update(append([]byte{0x0, 0x0, 0x0, 0x0}, s.proposedKey...))
+	s.State = SecurityKeyAccepted
 }
 
 // Generate the security keys from the 0x5e/0x4e initialisation
@@ -133,7 +157,7 @@ func ValidateChecksum(message []byte) bool {
 // plus any trailing data.
 func ValidateAndDecodeMessage(message []byte) ([]byte, byte, []byte) {
 	if len(message) < 4 {
-		fmt.Printf("Short msg\n")
+		log.Debugf("Short msg\n")
 		return nil, 0, nil
 	}
 	xor := message[2]
@@ -142,7 +166,7 @@ func ValidateAndDecodeMessage(message []byte) ([]byte, byte, []byte) {
 		xor ^= 1
 		msg = XorMessageWith(message, xor)
 		if !ValidateChecksum(msg) {
-			fmt.Printf("Bad sum for (%s)\n", hex.EncodeToString(message))
+			log.Debugf("Bad sum for (%s)\n", hex.EncodeToString(message))
 			return nil, 0, nil
 		}
 	}

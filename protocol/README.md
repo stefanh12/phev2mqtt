@@ -262,7 +262,7 @@ There seem to be two types of register layout (A/B).
 |0x17      | ??                           | 1      | 103       | [1]                           |                                     |
 |0x18      | ??                           | 4 / 16 | 276 / 104 | [1,1,2] / [5,3,5,3]           |                                     |
 |0x19      | ??                           | 9      | 120       | [1,5,3]                       |                                     |
-|0x1a      | ??                           | 5 / 2  | 129       | [1,1,1,1,1] / [1,1]           |                                     |
+|0x1a      | Ignition status              | 5 / 2  | 129       | [1,1,1,1,1] / [1,1]           |                                     |
 |0x1b      | ??                           | 1      | 134       | [1]                           |                                     |
 |0x1c      | AirCon Mode                  | 1      | 136       | [1]                           |                                     |
 |0x1d      | Battery Level / light status | 4      | 137       | [1,1,1,1]                     |                                     |
@@ -271,7 +271,7 @@ There seem to be two types of register layout (A/B).
 |0x20      | ??                           | 10     | 146       | [2,2,2,2,2]                   |                                     |
 |0x21      | ??                           | 1      | 156       | [1]                           |                                     |
 |0x22      | ??                           | 6      | 157       | [2,2,2]                       |                                     |
-|0x23      | ??                           | 5      | 163       | [1,1,1,1,1]                   | Maybe AC related                    |
+|0x23      | Interior/Hazard Lights + AC? | 5      | 163       | [1,1,1,1,1]                   |                                     |
 |0x24      | Door Lock Status             | 10     | 168       | [1,1,1,1,1,1,1,1,1,1]         |                                     |
 |0x25      | ??                           | 3      | 178       | [1,1,1]                       |                                     |
 |0x26      | ??                           | 1      | 181       | [1]                           |                                     |
@@ -331,17 +331,20 @@ __must be converted from big endian to little endian__ to be useful
 | 18       | off                                         |
 | 19-23    | Unknown (unused?)                           |
 
-### 0x10 - Aircon status
+### 0x10 - Preconditioning status
 
 3 bytes.
 
 | Byte(s) | Description |
-|--|--|
-|0 | Unknown |
-| 1 | AC operating [0=off 1=on] |
+|---------|-------------|
+| 0 | Preconditioning state [0 = off, 2 = on, 3 = cancelled by open door/low battery] |
+| 1 | Unknown |
 | 2 | Unknown |
 
 02b00b = windscreen on/10min
+026e09 = windscreen on/10min (on another vehicle)
+030000 = after door openining
+000000 = precondition not active/terminated normally (e.g. timer elapsed.)
 
 ### 0x12 - Car time sync
 
@@ -356,6 +359,15 @@ Vin info and regstration status.
 |19 | Number of registered clients |
 
 ### 0x17 - Charge timer state
+
+### 0x1a - Ignition status
+
+Probably some other info, but at least ignition status is shown.
+
+| Byte | Description |
+|--|--|
+| 0 | Ignition state. 0x0=off 0x3=acc 0x4=on |
+| 1-4 | Unknown, currently only seen as 0x0 |
 
 ### 0x1c - Aircon mode
 
@@ -393,7 +405,12 @@ Single byte.
 |0 | Charge status [0=not charging 1=charging]|
 | 1-2 | Charge time remaining |
 
-### 0x23 - Something AC?
+### 0x23 - Interior/Hazard lights + Something AC?
+
+Interior lights ON: `0000000201`
+Interior lights OFF: `0000000202`
+Hazard lights ON: `0000000102`
+Hazard lights OFF: `0000000202`
 
 AC timer sniff:
 
@@ -446,6 +463,7 @@ A string with the software version of the ECU.
 | 0xe      | Save settings??            | Sent after 0xf command |
 | 0xf      | Update settings            |                        |
 | 0x10     | Register Wifi client       | 0x1                    |
+| 0x13     | Reset PreAC state          | 0x1                    |
 | 0x15     | Unregister Wifi client     | 0x1                    |
 | 0x1a     | Set climate timer          | See below              |
 | 0x1b     | Set climate state          | See below              |
@@ -522,35 +540,35 @@ AC data sniff.
 
 Windscreen for 10 mins:
 
-INFO[0000] out  [a1] REGISTER SET  (reg 0x1b data 02030000) 
-INFO[0000] in   [a1] REGISTER NTFY (reg 0x10 data 02b00b) 
-INFO[0000] in   [55] REGISTER NTFY (reg 0x1a data 0001000000) 
-INFO[0000] in   [70] REGISTER NTFY (reg 0x1c data 03)   
+INFO[0000] out  [a1] REGISTER SET  (reg 0x1b data 02030000)
+INFO[0000] in   [a1] REGISTER NTFY (reg 0x10 data 02b00b)
+INFO[0000] in   [55] REGISTER NTFY (reg 0x1a data 0001000000)
+INFO[0000] in   [70] REGISTER NTFY (reg 0x1c data 03)
 
 Heat in 5 mins for 10 mins:
 
-INFO[0000] out  [70] REGISTER SET  (reg 0x1b data 02020001) 
-INFO[0000] in   [01] REGISTER NTFY (reg 0x1a data 0000000101) 
-INFO[0000] in   [86] REGISTER NTFY (reg 0x1c data 02)   
+INFO[0000] out  [70] REGISTER SET  (reg 0x1b data 02020001)
+INFO[0000] in   [01] REGISTER NTFY (reg 0x1a data 0000000101)
+INFO[0000] in   [86] REGISTER NTFY (reg 0x1c data 02)
 
 Heat in 0 mins for 10 mins:
 
-INFO[0000] out  [73] REGISTER SET  (reg 0x1b data 02020000) 
-INFO[0000] in   [73] REGISTER NTFY (reg 0x10 data 02b020) 
-INFO[0000] in   [22] REGISTER NTFY (reg 0x1a data 0001000000) 
-INFO[0000] in   [50] REGISTER NTFY (reg 0x1c data 02)   
+INFO[0000] out  [73] REGISTER SET  (reg 0x1b data 02020000)
+INFO[0000] in   [73] REGISTER NTFY (reg 0x10 data 02b020)
+INFO[0000] in   [22] REGISTER NTFY (reg 0x1a data 0001000000)
+INFO[0000] in   [50] REGISTER NTFY (reg 0x1c data 02)
 
 Heat in 0 mins for 20 mins
-INFO[0000] out  [4e] REGISTER SET  (reg 0x1b data 02020100) 
-INFO[0000] in   [1c] REGISTER NTFY (reg 0x10 data 02b034) 
-INFO[0000] in   [e7] REGISTER NTFY (reg 0x1a data 0001010000) 
-INFO[0000] in   [c6] REGISTER NTFY (reg 0x1c data 02)   
+INFO[0000] out  [4e] REGISTER SET  (reg 0x1b data 02020100)
+INFO[0000] in   [1c] REGISTER NTFY (reg 0x10 data 02b034)
+INFO[0000] in   [e7] REGISTER NTFY (reg 0x1a data 0001010000)
+INFO[0000] in   [c6] REGISTER NTFY (reg 0x1c data 02)
 
 Cool 0 mins for 10 mins
-INFO[0170] out  [5f] REGISTER SET  (reg 0x1b data 02010000) 
-INFO[0170] in   [5b] REGISTER NTFY (reg 0x10 data 02b139) 
-INFO[0171] in   [18] REGISTER NTFY (reg 0x1a data 0001000000) 
-INFO[0171] in   [95] REGISTER NTFY (reg 0x1c data 01)  
+INFO[0170] out  [5f] REGISTER SET  (reg 0x1b data 02010000)
+INFO[0170] in   [5b] REGISTER NTFY (reg 0x10 data 02b139)
+INFO[0171] in   [18] REGISTER NTFY (reg 0x1a data 0001000000)
+INFO[0171] in   [95] REGISTER NTFY (reg 0x1c data 01)
 
 Cool 10 mins for 10 mins
 SETREG 0x1b: -> 02010002
