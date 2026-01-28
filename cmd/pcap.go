@@ -14,10 +14,15 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
+
+//go:build pcap
+
 package cmd
 
 import (
 	"encoding/hex"
+	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -37,10 +42,31 @@ var pcapCmd = &cobra.Command{
 such as Wireshark.
 
 The decoder filters TCP packets to and from port 8080.
+
+This can also read files from a TCP connection. Specify
+"tcp:<address>:<port>". This can be useful for realtime monitoring
+via Android (https://wladimir-tm4pda.github.io/porting/tcpdump.html)
 `,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		handle, err := pcap.OpenOffline(args[0])
+		var handle *pcap.Handle
+		var err error
+		if parts := strings.Split(args[0], ":"); len(parts) == 3 && parts[0] == "tcp" {
+			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", parts[1], parts[2]))
+			if err != nil {
+				log.Fatal(err)
+			}
+			if tcpconn, ok := conn.(*net.TCPConn); ok {
+				if tc, err := tcpconn.File(); err == nil {
+					handle, err = pcap.OpenOfflineFile(tc)
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
+			}
+		} else {
+			handle, err = pcap.OpenOffline(args[0])
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -121,8 +147,6 @@ func processPayload(cmd *cobra.Command, data []byte, dir string) {
 		log.Infof("%s [%02x] %s", dir, msg.Xor, msg.ShortForm())
 	}
 }
-
-var securityKey *protocol.SecurityKey
 
 var regs = map[byte]string{}
 

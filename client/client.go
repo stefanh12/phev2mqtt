@@ -5,11 +5,10 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"net"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/buxtronix/phev2mqtt/protocol"
 )
@@ -24,7 +23,7 @@ type Listener struct {
 	stop bool
 }
 
-func (l *Listener) start() {
+func (l *Listener) Start() {
 	l.stop = false
 	l.C = make(chan *protocol.PhevMessage, 5)
 }
@@ -33,7 +32,7 @@ func (l *Listener) Stop() {
 	l.stop = true
 }
 
-func (l *Listener) send(m *protocol.PhevMessage) {
+func (l *Listener) Send(m *protocol.PhevMessage) {
 	select {
 	case l.C <- m:
 	default:
@@ -56,6 +55,7 @@ const (
 	ModelYearUnknown ModelYear = iota
 	ModelYear14
 	ModelYear18
+	ModelYear24
 )
 
 // A Client is a TCP client to a Phev.
@@ -64,6 +64,9 @@ type Client struct {
 	Recv chan *protocol.PhevMessage
 	// Send is a channel to send messages to the Phev.
 	Send chan *protocol.PhevMessage
+
+	// Settings are settings for the car.
+	Settings *protocol.Settings
 
 	listeners []*Listener
 	lMu       sync.Mutex
@@ -96,6 +99,7 @@ func New(opts ...Option) (*Client, error) {
 	cl := &Client{
 		Recv:      make(chan *protocol.PhevMessage, 5),
 		Send:      make(chan *protocol.PhevMessage, 5),
+		Settings:  &protocol.Settings{},
 		started:   make(chan struct{}, 2),
 		listeners: []*Listener{},
 		address:   DefaultAddress,
@@ -113,7 +117,7 @@ func (c *Client) AddListener() *Listener {
 	c.lMu.Lock()
 	defer c.lMu.Unlock()
 	l := &Listener{}
-	l.start()
+	l.Start()
 	c.listeners = append(c.listeners, l)
 	return l
 }
@@ -132,7 +136,6 @@ func (c *Client) RemoveListener(l *Listener) {
 
 // Close closes the client.
 func (c *Client) Close() error {
-	log.Info("Client closing.")
 	c.closed = true
 	if c.conn == nil {
 		return nil
@@ -157,7 +160,7 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-var startTimeout = 5 * time.Second
+var startTimeout = 20 * time.Second
 
 // Start waits for the client to start.
 func (c *Client) Start() error {
@@ -191,7 +194,7 @@ func (c *Client) SetRegister(register byte, value []byte) error {
 		}
 	}
 	xor := byte(0)
-	timer := time.After(3 * time.Second)
+	timer := time.After(10 * time.Second)
 	l := c.AddListener()
 	defer c.RemoveListener(l)
 SETREG:
@@ -199,20 +202,16 @@ SETREG:
 	for {
 		select {
 		case <-timer:
-			c.Close()
 			return fmt.Errorf("timed out attempting to set register %02x", register)
 		case msg, ok := <-l.C:
 			if !ok {
-				c.Close()
 				return fmt.Errorf("listener channel closed")
 			}
 			if msg.Type == protocol.CmdInBadEncoding {
 				xor = msg.Data[0]
-				c.Close()
 				goto SETREG
 			}
 			if msg.Type == protocol.CmdInResp && msg.Ack == protocol.Ack && msg.Register == register {
-				log.Info("Settinge register successfull.")
 				return nil
 			}
 
@@ -247,12 +246,7 @@ func (c *Client) pinger() {
 		case t.Sub(c.lastRx) < 500*time.Millisecond:
 			continue
 		}
-		c.Send <- &protocol.PhevMessage{
-			Type:     protocol.CmdOutPingReq,
-			Ack:      protocol.Request,
-			Register: pingSeq,
-			Data:     []byte{0x0},
-		}
+		c.Send <- protocol.NewPingRequestMessage(pingSeq)
 		pingSeq++
 		if pingSeq > 0x63 {
 			pingSeq = 0
@@ -266,14 +260,23 @@ func (c *Client) manage() {
 	defer ml.Stop()
 	for m := range ml.C {
 		switch m.Type {
-		case protocol.CmdInStartResp:
-			c.Send <- &protocol.PhevMessage{
-				Type:     protocol.CmdOutPingReq,
-				Ack:      protocol.Request,
-				Register: 0xa,
-				Data:     []byte{0x0},
-				Xor:      m.Xor,
+		case protocol.CmdInResp:
+			if m.Ack == protocol.Request && m.Register == protocol.SettingsRegister {
+				c.Settings.FromRegister(m.Data)
 			}
+		case protocol.CmdInStartResp:
+			c.Send <- protocol.NewPingRequestMessage(0xa)
+		case protocol.CmdInMy24StartReq:
+			c.ModelYear = ModelYear24
+			c.Send <- &protocol.PhevMessage{
+				Type:     protocol.CmdOutMy24StartResp,
+				Register: 0x1,
+				Ack:      protocol.Ack,
+				Xor:      m.Xor,
+				Data:     []byte{0x0},
+			}
+			log.Debug("%%PHEV_START24_RECV%%")
+			c.started <- struct{}{}
 		case protocol.CmdInMy18StartReq:
 			c.ModelYear = ModelYear18
 			c.Send <- &protocol.PhevMessage{
@@ -312,7 +315,7 @@ func (c *Client) reader() {
 				log.Debug("%%PHEV_TCP_READER_ERROR%%: ", err)
 			}
 			log.Debug("%PHEV_TCP_READER_CLOSE%")
-			c.conn.Close()
+			c.Close()
 			close(c.Recv)
 			c.lMu.Lock()
 			for _, l := range c.listeners {
@@ -328,7 +331,7 @@ func (c *Client) reader() {
 			log.Debugf("%%PHEV_TCP_RECV_MSG%%: [%02x] %s", m.Xor, m.ShortForm())
 			c.lMu.Lock()
 			for _, l := range c.listeners {
-				l.send(m)
+				l.Send(m)
 			}
 			c.lMu.Unlock()
 			c.Recv <- m
@@ -342,7 +345,7 @@ func (c *Client) writer() {
 		case msg, ok := <-c.Send:
 			if !ok {
 				log.Debug("%PHEV_TCP_WRITER_CLOSE%")
-				c.conn.Close()
+				c.Close()
 				return
 			}
 			msg.Xor = 0
@@ -355,7 +358,7 @@ func (c *Client) writer() {
 					log.Errorf("%%PHEV_TCP_WRITER_ERROR%%: %v", err)
 				}
 				log.Debug("%PHEV_TCP_WRITER_CLOSE%")
-				c.conn.Close()
+				c.Close()
 				return
 			}
 		}
