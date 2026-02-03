@@ -89,7 +89,6 @@ func (r *ConfigReloader) checkAndReload() {
 	
 	// Only reload if the modification time has actually changed
 	if modTime.Equal(r.lastModTime) || modTime.Before(r.lastModTime) {
-		log.Debugf("Config file timestamp unchanged, skipping reload")
 		return
 	}
 	
