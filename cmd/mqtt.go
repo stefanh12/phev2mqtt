@@ -105,7 +105,7 @@ func (c *climate) mqttStates() map[string]string {
 
 var lastWifiRestart time.Time
 
-func restartWifi(cmd *cobra.Command) error {
+func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	restartRetryTime := viper.GetDuration("wifi_restart_retry_time")
 
 	if time.Now().Sub(lastWifiRestart) < restartRetryTime {
@@ -115,21 +115,35 @@ func restartWifi(cmd *cobra.Command) error {
 		lastWifiRestart = time.Now()
 	}()
 
+	// Check if local WiFi restart is enabled
+	localEnabled := viper.GetBool("local_wifi_restart_enabled")
 	restartCommand := viper.GetString("wifi_restart_command")
-	if restartCommand == "" {
-		log.Debugf("wifi restart disabled")
-		return nil
+	
+	if localEnabled && restartCommand != "" {
+		log.Infof("Attempting to restart local WiFi interface")
+		restartCmd := exec.Command("/bin/sh", "-c", restartCommand)
+		stdoutStderr, err := restartCmd.CombinedOutput()
+		if len(stdoutStderr) > 0 {
+			log.Infof("Output from local WiFi restart: %s", stdoutStderr)
+		}
+		if err != nil {
+			log.Errorf("Error restarting local WiFi: %v", err)
+		}
+	} else {
+		log.Debugf("Local WiFi restart disabled")
 	}
-
-	log.Debugf("Attempting to restart wifi")
-
-	restartCmd := exec.Command("/bin/sh", "-c", restartCommand)
-
-	stdoutStderr, err := restartCmd.CombinedOutput()
-	if len( stdoutStderr ) > 0 {
-		log.Infof("Output from wifi restart: %s", stdoutStderr)
+	
+	// Check if remote WiFi restart is enabled
+	remoteEnabled := viper.GetBool("remote_wifi_restart_enabled")
+	if remoteEnabled && m.remoteWifiRestartTopic != "" {
+		if time.Now().Sub(m.lastRemoteWifiRestart) > 2*time.Minute {
+			m.restartRemoteWifi()
+		}
+	} else {
+		log.Debugf("Remote WiFi restart disabled")
 	}
-	return err
+	
+	return nil
 }
 
 func (m *mqttClient) restartRemoteWifi() {
@@ -283,12 +297,8 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			}
 			// Restart Wifi interface if > wifi_restart_time.
 			if wifiRestartTime > 0 && time.Now().Sub(m.lastConnect) > wifiRestartTime {
-				if err := restartWifi(cmd); err != nil {
-					log.Errorf("Error restarting local wifi: %v", err)
-				}
-				// Also try remote WiFi restart if configured
-				if m.remoteWifiRestartTopic != "" && time.Now().Sub(m.lastRemoteWifiRestart) > 2*time.Minute {
-					m.restartRemoteWifi()
+				if err := restartWifi(cmd, m); err != nil {
+					log.Errorf("Error during WiFi restart: %v", err)
 				}
 			}
 		}
@@ -952,9 +962,11 @@ func init() {
 	mqttCmd.Flags().String("ha_discovery_prefix", "homeassistant", "Prefix for Home Assistant MQTT discovery")
 	mqttCmd.Flags().Duration("update_interval", 5*time.Minute, "How often to request force updates")
 	mqttCmd.Flags().Duration("retry_interval", time.Second, "How often to retry connection when PHEV is not available")
+	mqttCmd.Flags().Bool("local_wifi_restart_enabled", false, "Enable local WiFi restart")
 	mqttCmd.Flags().Duration("wifi_restart_time", 0, "Attempt to restart Wifi if no connection for this long")
 	mqttCmd.Flags().Duration("wifi_restart_retry_time", 2*time.Minute, "Interval to attempt Wifi restart")
 	mqttCmd.Flags().String("wifi_restart_command", defaultWifiRestartCmd, "Command to restart Wifi connection to Phev")
+	mqttCmd.Flags().Bool("remote_wifi_restart_enabled", false, "Enable remote WiFi restart via MQTT")
 	mqttCmd.Flags().String("remote_wifi_restart_topic", "", "MQTT topic to send remote WiFi restart command (e.g., for MikroTik)")
 	mqttCmd.Flags().String("remote_wifi_restart_message", "restart", "Message payload for remote WiFi restart")
 
@@ -967,9 +979,11 @@ func init() {
 	viper.BindPFlag("ha_discovery_prefix", mqttCmd.Flags().Lookup("ha_discovery_prefix"))
 	viper.BindPFlag("update_interval", mqttCmd.Flags().Lookup("update_interval"))
 	viper.BindPFlag("retry_interval", mqttCmd.Flags().Lookup("retry_interval"))
+	viper.BindPFlag("local_wifi_restart_enabled", mqttCmd.Flags().Lookup("local_wifi_restart_enabled"))
 	viper.BindPFlag("wifi_restart_time", mqttCmd.Flags().Lookup("wifi_restart_time"))
 	viper.BindPFlag("wifi_restart_retry_time", mqttCmd.Flags().Lookup("wifi_restart_retry_time"))
 	viper.BindPFlag("wifi_restart_command", mqttCmd.Flags().Lookup("wifi_restart_command"))
+	viper.BindPFlag("remote_wifi_restart_enabled", mqttCmd.Flags().Lookup("remote_wifi_restart_enabled"))
 	viper.BindPFlag("remote_wifi_restart_topic", mqttCmd.Flags().Lookup("remote_wifi_restart_topic"))
 	viper.BindPFlag("remote_wifi_restart_message", mqttCmd.Flags().Lookup("remote_wifi_restart_message"))
 }
