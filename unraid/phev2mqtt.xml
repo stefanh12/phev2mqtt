@@ -29,7 +29,7 @@ GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
   <Category/>
   <WebUI/>
   <TemplateURL/>
-  <Icon/>
+  <Icon>https://raw.githubusercontent.com/stefanh12/phev2mqtt/master/unraid/icon.png</Icon>
   <ExtraParams>--cap-add=NET_ADMIN</ExtraParams>
   <PostArgs/>
   <CPUset/>
