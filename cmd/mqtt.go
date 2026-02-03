@@ -266,14 +266,18 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		switch payload {
 		case "off":
 			m.enabled = false
-			m.phev.Close()
+			if m.phev != nil {
+				m.phev.Close()
+			}
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
 		case "on":
 			m.enabled = true
 		case "restart":
 			m.enabled = true
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
-			m.phev.Close()
+			if m.phev != nil {
+				m.phev.Close()
+			}
 		}
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
