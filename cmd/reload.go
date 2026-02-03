@@ -86,9 +86,15 @@ func (r *ConfigReloader) checkAndReload() {
 	}
 
 	modTime := info.ModTime()
-	if modTime.After(r.lastModTime) {
-		log.Infof("Configuration file changed, reloading...")
-		r.lastModTime = modTime
+	
+	// Only reload if the modification time has actually changed
+	if modTime.Equal(r.lastModTime) || modTime.Before(r.lastModTime) {
+		log.Debugf("Config file timestamp unchanged, skipping reload")
+		return
+	}
+	
+	log.Infof("Configuration file changed (timestamp: %v), reloading...", modTime)
+	r.lastModTime = modTime
 
 		// Re-read environment variables from the file
 		if err := r.reloadEnvFile(); err != nil {
