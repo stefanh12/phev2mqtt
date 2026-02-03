@@ -17,6 +17,12 @@ Features: Remote climate control, battery status monitoring, charging status, do
 &#xD;
 CONFIGURATION: All settings are configured via .env file in the mapped /config folder. On first start, an example .env file will be created automatically. Edit it with your MQTT credentials and restart the container.&#xD;
 &#xD;
+Settings in .env file:&#xD;
+- mqtt_server, mqtt_user, mqtt_password: MQTT broker connection (REQUIRED)&#xD;
+- phev_register: Set to 'true' only when registering a new vehicle&#xD;
+- debug: Set to 'true' for detailed debug logging, 'false' for normal info logging&#xD;
+- route_add: Gateway IP for routing to 192.168.8.0/24 PHEV network&#xD;
+&#xD;
 Requires NET_ADMIN capability for network routing. Configure your MikroTik router according to the documentation.&#xD;
 &#xD;
 GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
@@ -31,5 +37,10 @@ GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="Config Folder" Target="/config" Default="/mnt/user/appdata/phev2mqtt" Mode="rw" Description="Configuration folder - An example .env file will be created here on first start. Edit /config/.env with your MQTT credentials (server, user, password) and other settings, then restart the container." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/phev2mqtt</Config>
+  <Config Name="Config Folder" Target="/config" Default="/mnt/user/appdata/phev2mqtt" Mode="rw" Description="Configuration folder - An example .env file will be created here on first start. Edit /config/.env with your settings:&#xD;
+- mqtt_server, mqtt_user, mqtt_password (REQUIRED)&#xD;
+- phev_register: 'true' to register vehicle (change back to 'false' after)&#xD;
+- debug: 'true' for debug logging, 'false' for normal logging&#xD;
+- route_add: Gateway IP for routing to PHEV network&#xD;
+Then restart the container." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/phev2mqtt</Config>
 </Container>

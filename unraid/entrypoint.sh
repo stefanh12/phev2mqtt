@@ -39,24 +39,41 @@ else
 # phev2mqtt Configuration
 # Edit this file with your actual credentials and settings
 
-# MQTT Broker Configuration
+# ==========================================
+# MQTT Broker Configuration (REQUIRED)
+# ==========================================
 mqtt_server=192.168.1.2:1883
 mqtt_user=phevmqttuser
 mqtt_password=your_secure_password_here
 
+# ==========================================
 # PHEV Registration Mode
-# Set to 'true' only when registering a new vehicle, then change back to 'false'
+# ==========================================
+# Set to 'true' ONLY when registering a new vehicle
+# After successful registration, change back to 'false'
 phev_register=false
 
-# Debug Mode
-# Set to 'true' to keep container running for debugging
+# ==========================================
+# Debug Logging
+# ==========================================
+# Set to 'true' to enable detailed debug logging
+# This shows all connection attempts, MQTT messages, and protocol details
+# Set to 'false' for normal info level logging (recommended for production)
 debug=false
 
+# ==========================================
 # Network Routing
-# IP address of gateway that routes to your PHEV (192.168.8.0/24)
+# ==========================================
+# IP address of the gateway that routes to your PHEV network (192.168.8.0/24)
+# This is typically your router's IP address on the main network
+# Example: If your router is at 192.168.1.1, set this to 192.168.1.1
 route_add=192.168.1.1
 
+# ==========================================
 # Additional Arguments (optional)
+# ==========================================
+# Any extra command-line arguments to pass to phev2mqtt
+# Leave empty if not needed
 extra_add=""
 EOF
         echo ""
@@ -98,20 +115,25 @@ if [[ -n "$CONNECT_route_add" ]]; then
 else
     echo "Warning: route_add not set. This may cause connectivity issues with the PHEV (192.168.8.0/24)"
 fi
-if [[ $CONNECT_DEBUG == "true" ]]
-then
-	echo Debug mode on - sleeping indefinitely
-	sleep inf
+
+# Set log level based on debug flag
+if [[ $CONNECT_DEBUG == "true" ]]; then
+    LOG_LEVEL="debug"
+    echo "Debug logging enabled (verbosity=debug)"
+else
+    LOG_LEVEL="info"
 fi
+
 if [[ $CONNECT_phev_register == "true" ]]
 then
-	echo register client
-	exec /usr/src/app/phev2mqtt/phev2mqtt client register
+	echo "Registering client with PHEV"
+	exec /usr/src/app/phev2mqtt/phev2mqtt client register --verbosity "$LOG_LEVEL"
 else
-    echo Starting phev2mqtt
+    echo "Starting phev2mqtt with log level: $LOG_LEVEL"
     exec /usr/src/app/phev2mqtt/phev2mqtt \
         client \
         mqtt \
+        --verbosity "$LOG_LEVEL" \
         --mqtt_server "tcp://$CONNECT_mqtt_server/" \
         --mqtt_username "$CONNECT_mqtt_user" \
         --mqtt_password "$CONNECT_mqtt_password" \
