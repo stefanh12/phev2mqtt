@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/google/gopacket v1.1.19
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.8.3
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	github.com/wercker/journalhook v0.0.0-20230927020745-64542ffa4117
