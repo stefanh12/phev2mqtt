@@ -106,15 +106,14 @@ fi
 if [[ $CONNECT_phev_register == "true" ]]
 then
 	echo register client
-	/usr/src/app/phev2mqtt/phev2mqtt client register
+	exec /usr/src/app/phev2mqtt/phev2mqtt client register
 else
     echo Starting phev2mqtt
-    /usr/src/app/phev2mqtt/phev2mqtt \
+    exec /usr/src/app/phev2mqtt/phev2mqtt \
         client \
         mqtt \
         --mqtt_server "tcp://$CONNECT_mqtt_server/" \
         --mqtt_username "$CONNECT_mqtt_user" \
         --mqtt_password "$CONNECT_mqtt_password" \
         $CONNECT_extra_add
-
 fi
