@@ -91,31 +91,12 @@ echo "mqtt_server=$CONNECT_mqtt_server"
 echo "route_add=$CONNECT_route_add"
 echo "extra_add=$CONNECT_extra_add"
 
-
-
-if [[ "x$CONNECT_DEBUG" = "x" ]]; then
-		echo "The debug variable is not set, should be set to true to sleep. Can be used to register the client with /usr/src/app/phev2mqtt/phev2mqtt client register"
-fi
-if [[ "x$CONNECT_phev_register" = "x" ]]; then
-		echo "The phev_register variable shall be set to true to register the client with the phev"
-		exit 1
-fi
-if [[ "x$CONNECT_mqtt_server" = "x" ]]; then
-		echo "The mqtt_server variable must be set."
-		exit 1
-fi
-if [[ "x$CONNECT_mqtt_user" = "x" ]]; then
-		echo "The mqtt_user variable must be set."
-		exit 1
-fi
-if [[ "x$CONNECT_mqtt_password" = "x" ]]; then
-		echo "The CONNECT_mqtt_password variable must be set."
-		exit 1
-fi
-if [[ "x$CONNECT_route_add" = "x" ]]; then
-		echo "The route_add variable is not set. This can lead to stability issues with rounting to 192.168.8.0 network"
+# Add route if configured
+if [[ -n "$CONNECT_route_add" ]]; then
+    echo "Adding route to 192.168.8.0/24 via gateway $CONNECT_route_add"
+    route add -net 192.168.8.0 netmask 255.255.255.0 gw $CONNECT_route_add eth0
 else
-        route add -net 192.168.8.0 netmask 255.255.255.0 gw $CONNECT_route_add eth0
+    echo "Warning: route_add not set. This may cause connectivity issues with the PHEV (192.168.8.0/24)"
 fi
 if [[ $CONNECT_DEBUG == "true" ]]
 then
