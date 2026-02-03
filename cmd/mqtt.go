@@ -176,6 +176,10 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.haPublishedDiscovery	= false
 	m.lastError		= nil
 
+	log.Infof("Connecting to MQTT broker: %s", mqttServer)
+	log.Infof("MQTT username: %s", mqttUsername)
+	log.Infof("MQTT topic prefix: %s", m.prefix)
+
 	m.options = mqtt.NewClientOptions().
 		AddBroker(mqttServer).
 		SetClientID("phev2mqtt").
@@ -187,31 +191,39 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 	m.client = mqtt.NewClient(m.options)
 	if token := m.client.Connect(); token.Wait() && token.Error() != nil {
+		log.Errorf("Failed to connect to MQTT broker: %v", token.Error())
 		return token.Error()
 	}
+	log.Infof("Successfully connected to MQTT broker")
 
 	if !mqttDisableSet {
+		log.Infof("Subscribing to topic: %s", m.topic("/set/#"))
 		if token := m.client.Subscribe(m.topic("/set/#"), 0, nil); token.Wait() && token.Error() != nil {
 			return token.Error()
 		}
 	} else {
 		log.Info("Setting vechicle registers via MQTT is disabled")
 	}
+	log.Infof("Subscribing to topic: %s", m.topic("/connection"))
 	if token := m.client.Subscribe(m.topic("/connection"), 0, nil); token.Wait() && token.Error() != nil {
 		return token.Error()
 	}
+	log.Infof("Subscribing to topic: %s", m.topic("/settings/#"))
 	if token := m.client.Subscribe(m.topic("/settings/#"), 0, nil); token.Wait() && token.Error() != nil {
 		return token.Error()
 	}
+	log.Infof("MQTT subscriptions complete")
 
 	m.mqttData = map[string]string{}
+
+	log.Infof("Starting connection loop to PHEV at address: %s", viper.GetString("address"))
 
 	for {
 		if m.enabled {
 			if err := m.handlePhev(cmd); err != nil {
 				// Do not flood the log with the same messages every second
 				if m.lastError == nil || m.lastError.Error() != err.Error() {
-					log.Error(err)
+					log.Errorf("PHEV connection error: %v", err)
 					m.lastError = err
 				}
 			}
@@ -379,19 +391,25 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	var err error
 	address := viper.GetString("address")
+	log.Debugf("Creating new PHEV client for address: %s", address)
 	m.phev, err = client.New(client.AddressOption(address))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create PHEV client: %w", err)
 	}
 
+	log.Infof("Attempting to connect to PHEV at %s...", address)
 	if err := m.phev.Connect(); err != nil {
-		return err
+		return fmt.Errorf("failed to connect to PHEV: %w", err)
 	}
+	log.Infof("Successfully connected to PHEV")
 
+	log.Debugf("Starting PHEV client...")
 	if err := m.phev.Start(); err != nil {
-		return err
+		return fmt.Errorf("failed to start PHEV client: %w", err)
 	}
+	log.Infof("PHEV client started successfully")
 	m.client.Publish(m.topic("/available"), 0, true, "online")
+	log.Infof("Published availability status: online")
 
 	m.lastError = nil
 
