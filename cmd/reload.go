@@ -96,23 +96,22 @@ func (r *ConfigReloader) checkAndReload() {
 	log.Infof("Configuration file changed (timestamp: %v), reloading...", modTime)
 	r.lastModTime = modTime
 
-		// Re-read environment variables from the file
-		if err := r.reloadEnvFile(); err != nil {
-			log.Errorf("Failed to reload configuration: %v", err)
-			return
-		}
-
-		// Call the reload callback if set
-		r.mu.RLock()
-		callback := r.reloadCallback
-		r.mu.RUnlock()
-
-		if callback != nil {
-			callback()
-		}
-
-		log.Infof("Configuration reloaded successfully")
+	// Re-read environment variables from the file
+	if err := r.reloadEnvFile(); err != nil {
+		log.Errorf("Failed to reload configuration: %v", err)
+		return
 	}
+
+	// Call the reload callback if set
+	r.mu.RLock()
+	callback := r.reloadCallback
+	r.mu.RUnlock()
+
+	if callback != nil {
+		callback()
+	}
+
+	log.Infof("Configuration reloaded successfully")
 }
 
 // reloadEnvFile reads the .env file and updates environment variables
