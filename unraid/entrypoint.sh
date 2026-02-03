@@ -57,7 +57,7 @@ debug=false
 route_add=192.168.1.1
 
 # Additional Arguments (optional)
-extra_add=
+extra_add=""
 EOF
         echo ""
         echo "✓ Example .env file created at /config/.env"
