@@ -15,6 +15,8 @@ This container connects to your Mitsubishi Outlander PHEV via WiFi and provides 
 &#xD;
 Features: Remote climate control, battery status monitoring, charging status, door lock control, and more.&#xD;
 &#xD;
+CONFIGURATION: All settings are configured via .env file in the mapped /config folder. On first start, an example .env file will be created automatically. Edit it with your MQTT credentials and restart the container.&#xD;
+&#xD;
 Requires NET_ADMIN capability for network routing. Configure your MikroTik router according to the documentation.&#xD;
 &#xD;
 GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
@@ -29,10 +31,5 @@ GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="mqtt_server" Target="mqtt_server" Default="" Mode="" Description="MQTT broker server address and port (e.g., 192.168.1.2:1883)" Type="Variable" Display="always" Required="false" Mask="false">192.168.1.2:1883</Config>
-  <Config Name="mqtt_user" Target="mqtt_user" Default="" Mode="" Description="Username for MQTT broker authentication" Type="Variable" Display="always" Required="false" Mask="false">phevmqttuser</Config>
-  <Config Name="mqtt_password" Target="mqtt_password" Default="" Mode="" Description="Password for MQTT broker authentication" Type="Variable" Display="always" Required="false" Mask="false">mqttuserpassword</Config>
-  <Config Name="debug" Target="debug" Default="" Mode="" Description="Enable debug mode - set to true to keep the container running indefinitely for debugging" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
-  <Config Name="Host Key 8" Target="phev_register" Default="" Mode="" Description="Enable PHEV registration mode - set to true to register a new vehicle" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
-  <Config Name="Host Key 6" Target="route_add" Default="" Mode="" Description="IP address of the gateway that routes traffic to your PHEV (e.g., 192.168.1.1)" Type="Variable" Display="always" Required="false" Mask="false">192.168.1.1</Config>
+  <Config Name="Config Folder" Target="/config" Default="/mnt/user/appdata/phev2mqtt" Mode="rw" Description="Configuration folder - An example .env file will be created here on first start. Edit /config/.env with your MQTT credentials (server, user, password) and other settings, then restart the container." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/phev2mqtt</Config>
 </Container>
