@@ -70,6 +70,48 @@ debug=false
 route_add=192.168.1.1
 
 # ==========================================
+# Update Interval (optional)
+# ==========================================
+# How often to request force updates from the PHEV
+# Examples: 5m (5 minutes), 10m, 15m
+# Leave empty to use default (5m)
+update_interval=
+
+# ==========================================
+# Retry Interval (optional)
+# ==========================================
+# How often to retry connection when PHEV is not available
+# Examples: 1s (1 second), 5s, 10s
+# Leave empty to use default (1s)
+retry_interval=
+
+# ==========================================
+# WiFi Restart Configuration (optional)
+# ==========================================
+# Automatically restart WiFi interface if connection to PHEV is lost
+# NOTE: Only works on some hardware configurations
+# local_wifi_restart_enabled: Set to 'true' to enable, 'false' to disable
+# wifi_restart_time: Duration without connection before restarting WiFi (e.g., 5m, 10m)
+# wifi_restart_retry_time: Interval between WiFi restart attempts (default: 2m)
+# wifi_restart_command: Command to restart WiFi interface (leave empty for default)
+local_wifi_restart_enabled=false
+wifi_restart_time=10m
+wifi_restart_retry_time=2m
+wifi_restart_command=
+
+# ==========================================
+# Remote WiFi Restart Configuration (optional)
+# ==========================================
+# Send MQTT command to restart WiFi on remote device (e.g., MikroTik access point)
+# remote_wifi_restart_enabled: Set to 'true' to enable remote restart via MQTT
+# remote_wifi_restart_topic: MQTT topic to publish restart command to
+# remote_wifi_restart_message: Message payload to send (default: "restart")
+# Example for MikroTik: topic="mikrotik/phev/restart", message="restart"
+remote_wifi_restart_enabled=false
+remote_wifi_restart_topic=mikrotik/phev/restart
+remote_wifi_restart_message=restart
+
+# ==========================================
 # Additional Arguments (optional)
 # ==========================================
 # Any extra command-line arguments to pass to phev2mqtt
@@ -97,6 +139,15 @@ export CONNECT_mqtt_user=$mqtt_user
 export CONNECT_mqtt_password=$mqtt_password
 export CONNECT_route_add=$route_add
 export CONNECT_extra_add=$extra_add
+export CONNECT_update_interval=$update_interval
+export CONNECT_retry_interval=$retry_interval
+export CONNECT_local_wifi_restart_enabled=$local_wifi_restart_enabled
+export CONNECT_wifi_restart_time=$wifi_restart_time
+export CONNECT_wifi_restart_retry_time=$wifi_restart_retry_time
+export CONNECT_wifi_restart_command=$wifi_restart_command
+export CONNECT_remote_wifi_restart_enabled=$remote_wifi_restart_enabled
+export CONNECT_remote_wifi_restart_topic=$remote_wifi_restart_topic
+export CONNECT_remote_wifi_restart_message=$remote_wifi_restart_message
 
 
 echo "Using the following environment variables:"
@@ -107,6 +158,18 @@ echo "mqtt_server=$CONNECT_mqtt_server"
 #echo "mqtt_password=$CONNECT_mqtt_password"
 echo "route_add=$CONNECT_route_add"
 echo "extra_add=$CONNECT_extra_add"
+echo "update_interval=$CONNECT_update_interval"
+echo "local_wifi_restart_enabled=$CONNECT_local_wifi_restart_enabled"
+if [[ "$CONNECT_local_wifi_restart_enabled" == "true" ]]; then
+    echo "  wifi_restart_time=$CONNECT_wifi_restart_time"
+    echo "  wifi_restart_retry_time=$CONNECT_wifi_restart_retry_time"
+    [[ -n "$CONNECT_wifi_restart_command" ]] && echo "  wifi_restart_command=$CONNECT_wifi_restart_command"
+fi
+echo "remote_wifi_restart_enabled=$CONNECT_remote_wifi_restart_enabled"
+if [[ "$CONNECT_remote_wifi_restart_enabled" == "true" ]]; then
+    echo "  remote_wifi_restart_topic=$CONNECT_remote_wifi_restart_topic"
+    echo "  remote_wifi_restart_message=$CONNECT_remote_wifi_restart_message"
+fi
 
 # Add route if configured
 if [[ -n "$CONNECT_route_add" ]]; then
@@ -130,12 +193,35 @@ then
 	exec /usr/src/app/phev2mqtt/phev2mqtt client register --verbosity "$LOG_LEVEL"
 else
     echo "Starting phev2mqtt with log level: $LOG_LEVEL"
-    exec /usr/src/app/phev2mqtt/phev2mqtt \
-        client \
-        mqtt \
-        --verbosity "$LOG_LEVEL" \
-        --mqtt_server "tcp://$CONNECT_mqtt_server/" \
-        --mqtt_username "$CONNECT_mqtt_user" \
-        --mqtt_password "$CONNECT_mqtt_password" \
-        $CONNECT_extra_add
+    
+    # Build command with optional parameters
+    CMD_ARGS=(
+        client
+        mqtt
+        --verbosity "$LOG_LEVEL"
+        --mqtt_server "tcp://$CONNECT_mqtt_server/"
+        --mqtt_username "$CONNECT_mqtt_user"
+        --mqtt_password "$CONNECT_mqtt_password"
+    )
+    
+    # Add optional parameters if set
+    [[ -n "$CONNECT_update_interval" ]] && CMD_ARGS+=(--update_interval "$CONNECT_update_interval")
+    [[ -n "$CONNECT_retry_interval" ]] && CMD_ARGS+=(--retry_interval "$CONNECT_retry_interval")
+    
+    # Add WiFi restart parameters only if enabled
+    if [[ "$CONNECT_local_wifi_restart_enabled" == "true" ]]; then
+        [[ -n "$CONNECT_wifi_restart_time" ]] && CMD_ARGS+=(--wifi_restart_time "$CONNECT_wifi_restart_time")
+        [[ -n "$CONNECT_wifi_restart_retry_time" ]] && CMD_ARGS+=(--wifi_restart_retry_time "$CONNECT_wifi_restart_retry_time")
+        [[ -n "$CONNECT_wifi_restart_command" ]] && CMD_ARGS+=(--wifi_restart_command "$CONNECT_wifi_restart_command")
+    fi
+    
+    # Add remote WiFi restart parameters only if enabled
+    if [[ "$CONNECT_remote_wifi_restart_enabled" == "true" ]]; then
+        [[ -n "$CONNECT_remote_wifi_restart_topic" ]] && CMD_ARGS+=(--remote_wifi_restart_topic "$CONNECT_remote_wifi_restart_topic")
+        [[ -n "$CONNECT_remote_wifi_restart_message" ]] && CMD_ARGS+=(--remote_wifi_restart_message "$CONNECT_remote_wifi_restart_message")
+    fi
+    
+    [[ -n "$CONNECT_extra_add" ]] && CMD_ARGS+=($CONNECT_extra_add)
+    
+    exec /usr/src/app/phev2mqtt/phev2mqtt "${CMD_ARGS[@]}"
 fi

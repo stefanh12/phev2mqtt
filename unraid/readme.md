@@ -4,9 +4,37 @@ You can install this by adding the xml file to /boot/config/plugins/dockerMan/te
 
 The container image is located https://github.com/stefanh12/phev2mqtt/pkgs/container/phev2mqtt.
 
+## Configuration
+
+All configuration is done via the `/config/.env` file. On first start, an example file will be created. Edit it with your settings:
+
+### Required Settings
+- `mqtt_server` - MQTT broker address (e.g., 192.168.1.2:1883)
+- `mqtt_user` - MQTT username
+- `mqtt_password` - MQTT password
+- `route_add` - Gateway IP for routing to PHEV network (192.168.8.0/24)
+
+### Optional Settings
+- `debug` - Set to `true` for detailed debug logging
+- `phev_register` - Set to `true` only when registering a new vehicle
+- `update_interval` - How often to request updates from PHEV (default: 5m)
+
+### WiFi Restart Features
+
+Two WiFi restart mechanisms are available:
+
+**Local WiFi Restart** (for systems with built-in WiFi):
+- `local_wifi_restart_enabled=true` - Enable local WiFi restart
+- `wifi_restart_time=10m` - Time to wait before restarting
+- Note: Only works on some hardware configurations
+
+**Remote WiFi Restart** (for MikroTik or external WiFi bridges):
+- `remote_wifi_restart_enabled=true` - Enable remote restart via MQTT
+- `remote_wifi_restart_topic=mikrotik/phev/restart` - MQTT topic to publish to
+- `remote_wifi_restart_message=restart` - Message to send
 
 The setup is only tested with one setup. That is Home Assistant running on a pi4, Unraid and Mikrotik SXTsq Lite2. 
 
-The SXTsq needs the package add-on mqtt, this enables home assistant to automate actions towards phev2mqtt depending on the connection. Most common issue is that the wifi is lost from phev and the link goes down. Restarting the connection is then usually needed from phev2mqtt also and not only on SXT.
+The SXTsq needs the package add-on mqtt, this enables home assistant to automate actions towards phev2mqtt depending on the connection. Most common issue is that the wifi is lost from phev and the link goes down. With remote WiFi restart enabled, phev2mqtt can automatically trigger the MikroTik to restart its WiFi interface via MQTT, which usually resolves the connection issue.
 
 
