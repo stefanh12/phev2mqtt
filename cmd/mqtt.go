@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -178,6 +179,10 @@ type mqttClient struct {
 	remoteWifiRestartTopic   string
 	remoteWifiRestartMessage string
 	lastRemoteWifiRestart    time.Time
+	
+	// Configuration hot reload
+	configReloader *ConfigReloader
+	mu             sync.RWMutex
 }
 
 func (m *mqttClient) topic(topic string) string {
@@ -213,6 +218,13 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 	m.haPublishedDiscovery	= false
 	m.lastError		= nil
+
+	// Initialize configuration hot reload
+	configFile := GetConfigFilePath()
+	m.configReloader = NewConfigReloader(configFile, 5*time.Second)
+	m.configReloader.SetReloadCallback(m.onConfigReload)
+	m.configReloader.Start()
+	defer m.configReloader.Stop()
 
 	log.Infof("Connecting to MQTT broker: %s", mqttServer)
 	log.Infof("MQTT username: %s", mqttUsername)
@@ -427,6 +439,33 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		m.phev.Settings.Clear()
 	} else {
 		log.Errorf("Unknown topic from mqtt: %s", msg.Topic())
+	}
+}
+
+// onConfigReload is called when configuration file changes
+func (m *mqttClient) onConfigReload() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	// Reload configuration values
+	m.updateInterval = viper.GetDuration("update_interval")
+	if m.updateInterval == 0 {
+		m.updateInterval = 5 * time.Minute
+	}
+	
+	m.retryInterval = viper.GetDuration("retry_interval")
+	if m.retryInterval == 0 {
+		m.retryInterval = time.Second
+	}
+	
+	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
+	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+	
+	log.Infof("Configuration reloaded:")
+	log.Infof("  update_interval: %v", m.updateInterval)
+	log.Infof("  retry_interval: %v", m.retryInterval)
+	if m.remoteWifiRestartTopic != "" {
+		log.Infof("  remote_wifi_restart_topic: %s", m.remoteWifiRestartTopic)
 	}
 }
 

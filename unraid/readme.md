@@ -37,4 +37,22 @@ The setup is only tested with one setup. That is Home Assistant running on a pi4
 
 The SXTsq needs the package add-on mqtt, this enables home assistant to automate actions towards phev2mqtt depending on the connection. Most common issue is that the wifi is lost from phev and the link goes down. With remote WiFi restart enabled, phev2mqtt can automatically trigger the MikroTik to restart its WiFi interface via MQTT, which usually resolves the connection issue.
 
+## Hot Reload
+
+Configuration changes in `/config/.env` are automatically detected and reloaded every 5 seconds without requiring a container restart. Simply edit the file and save - changes will be applied automatically.
+
+**Hot-reloadable settings:**
+- `update_interval`
+- `retry_interval`
+- `remote_wifi_restart_topic`
+- `remote_wifi_restart_message`
+
+**Requires restart:**
+- MQTT connection settings
+- Debug level
+- Registration mode
+- Network routing
+
+Check container logs to see confirmation of reload.
+
 

@@ -24,6 +24,28 @@ Sends MQTT commands to remotely restart WiFi on external devices like MikroTik a
 
 See the [routeros.md](routeros.md) file for MikroTik configuration examples.
 
+## Hot Reload Configuration
+
+The application automatically watches the `.env` file for changes and reloads configuration without requiring a container restart. Changes are detected every 5 seconds.
+
+**Hot-reloadable settings:**
+- `update_interval` - Update request frequency
+- `retry_interval` - Connection retry frequency
+- `remote_wifi_restart_topic` - Remote restart MQTT topic
+- `remote_wifi_restart_message` - Remote restart message
+
+**Settings requiring restart:**
+- MQTT connection settings (server, username, password)
+- Debug logging level
+- PHEV registration mode
+- Network routing configuration
+
+To apply changes, simply edit `/config/.env` and save. The changes will be applied within 5 seconds. Check the logs to confirm reload:
+```
+Configuration file changed, reloading...
+Configuration reloaded successfully
+```
+
 Tested against a MY20 vehicle
 
 Routeros config 
