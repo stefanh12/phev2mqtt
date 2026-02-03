@@ -1,0 +1,20 @@
+services:
+  phev2mqtt:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: phev2mqtt-dev
+    environment:
+      - mqtt_server=${MQTT_SERVER:-192.168.1.2:1883}
+      - mqtt_user=${MQTT_USER:-phevmqttuser}
+      - mqtt_password=${MQTT_PASSWORD}
+      - phev_register=${PHEV_REGISTER:-false}
+      - debug=${DEBUG:-false}
+      - route_add=${ROUTE_ADD:-}
+    cap_add:
+      - NET_ADMIN
+    network_mode: host
+    volumes:
+      - .:/workspace:ro
+    stdin_open: true
+    tty: true

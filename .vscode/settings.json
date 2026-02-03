@@ -1,0 +1,14 @@
+{
+    "go.toolsManagement.checkForUpdates": "local",
+    "go.useLanguageServer": true,
+    "go.buildOnSave": "workspace",
+    "go.lintOnSave": "workspace",
+    "go.vetOnSave": "workspace",
+    "go.formatTool": "gofmt",
+    "go.lintTool": "golint",
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/phev2mqtt": true
+    }
+}

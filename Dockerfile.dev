@@ -1,0 +1,41 @@
+FROM golang:1.21-alpine
+
+# Install dependencies
+RUN apk update && apk add --no-cache \
+    g++ \
+    gcc \
+    git \
+    bash \
+    libpcap-dev \
+    ca-certificates
+
+WORKDIR /app
+
+# Set environment variables with defaults
+ENV mqtt_server=192.168.1.2:1883
+ENV mqtt_user=phevmqttuser
+ENV mqtt_password=mqttuserpassword
+ENV phev_register=false
+ENV debug=false
+ENV route_add=""
+
+# Entry point for development - builds from mounted source
+ENTRYPOINT ["/bin/bash", "-c", "\
+    echo 'Building phev2mqtt from source...' && \
+    cd /workspace && \
+    go build -o /app/phev2mqtt . && \
+    echo 'Build complete!' && \
+    if [ -n \"$route_add\" ]; then \
+        echo \"Adding route to 192.168.8.0/24 via $route_add\" && \
+        route add -net 192.168.8.0 netmask 255.255.255.0 gw $route_add eth0 || true; \
+    fi && \
+    if [ \"$phev_register\" = \"true\" ]; then \
+        echo 'Running in registration mode...' && \
+        /app/phev2mqtt client register; \
+    else \
+        echo 'Starting MQTT client...' && \
+        /app/phev2mqtt client mqtt \
+            --mqtt_server tcp://$mqtt_server/ \
+            --mqtt_username $mqtt_user \
+            --mqtt_password $mqtt_password; \
+    fi"]

@@ -1,0 +1,60 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Docker: Build Development Image",
+            "type": "shell",
+            "command": "docker build -f Dockerfile.dev -t phev2mqtt:dev .",
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Docker: Run Development Container",
+            "type": "shell",
+            "command": "docker-compose -f docker-compose.dev.yml up",
+            "problemMatcher": [],
+            "group": "test",
+            "isBackground": true,
+            "dependsOn": ["Docker: Build Development Image"]
+        },
+        {
+            "label": "Docker: Stop Development Container",
+            "type": "shell",
+            "command": "docker-compose -f docker-compose.dev.yml down",
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Rebuild and Run",
+            "type": "shell",
+            "command": "docker-compose -f docker-compose.dev.yml up --build",
+            "problemMatcher": [],
+            "group": "test",
+            "isBackground": true
+        },
+        {
+            "label": "Docker: View Logs",
+            "type": "shell",
+            "command": "docker-compose -f docker-compose.dev.yml logs -f",
+            "problemMatcher": [],
+            "isBackground": true
+        },
+        {
+            "label": "Go: Build Local",
+            "type": "shell",
+            "command": "go build -o phev2mqtt .",
+            "problemMatcher": ["$go"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Go: Run MQTT Client",
+            "type": "shell",
+            "command": "./phev2mqtt client mqtt --mqtt_server tcp://192.168.1.2:1883/ --mqtt_username phevmqttuser --mqtt_password mqttuserpassword",
+            "problemMatcher": [],
+            "group": "test",
+            "dependsOn": ["Go: Build Local"]
+        }
+    ]
+}
