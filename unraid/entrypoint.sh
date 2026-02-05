@@ -92,11 +92,9 @@ retry_interval=
 # NOTE: Only works on some hardware configurations
 # local_wifi_restart_enabled: Set to 'true' to enable, 'false' to disable
 # wifi_restart_time: Duration without connection before restarting WiFi (e.g., 5m, 10m)
-# wifi_restart_retry_time: Interval between WiFi restart attempts (default: 2m)
 # wifi_restart_command: Command to restart WiFi interface (leave empty for default)
 local_wifi_restart_enabled=false
 wifi_restart_time=10m
-wifi_restart_retry_time=2m
 wifi_restart_command=
 
 # ==========================================
@@ -158,10 +156,8 @@ export CONNECT_mqtt_password=$mqtt_password
 export CONNECT_route_add=$route_add
 export CONNECT_extra_add=$extra_add
 export CONNECT_update_interval=$update_interval
-export CONNECT_retry_interval=$retry_interval
 export CONNECT_local_wifi_restart_enabled=$local_wifi_restart_enabled
 export CONNECT_wifi_restart_time=$wifi_restart_time
-export CONNECT_wifi_restart_retry_time=$wifi_restart_retry_time
 export CONNECT_wifi_restart_command=$wifi_restart_command
 export CONNECT_remote_wifi_restart_enabled=$remote_wifi_restart_enabled
 export CONNECT_remote_wifi_restart_topic=$remote_wifi_restart_topic
@@ -185,7 +181,6 @@ echo "update_interval=$CONNECT_update_interval"
 echo "local_wifi_restart_enabled=$CONNECT_local_wifi_restart_enabled"
 if [[ "$CONNECT_local_wifi_restart_enabled" == "true" ]]; then
     echo "  wifi_restart_time=$CONNECT_wifi_restart_time"
-    echo "  wifi_restart_retry_time=$CONNECT_wifi_restart_retry_time"
     [[ -n "$CONNECT_wifi_restart_command" ]] && echo "  wifi_restart_command=$CONNECT_wifi_restart_command"
 fi
 echo "remote_wifi_restart_enabled=$CONNECT_remote_wifi_restart_enabled"
@@ -229,12 +224,10 @@ else
     
     # Add optional parameters if set
     [[ -n "$CONNECT_update_interval" ]] && CMD_ARGS+=(--update_interval "$CONNECT_update_interval")
-    [[ -n "$CONNECT_retry_interval" ]] && CMD_ARGS+=(--retry_interval "$CONNECT_retry_interval")
     
     # Add WiFi restart parameters only if enabled
     if [[ "$CONNECT_local_wifi_restart_enabled" == "true" ]]; then
         [[ -n "$CONNECT_wifi_restart_time" ]] && CMD_ARGS+=(--wifi_restart_time "$CONNECT_wifi_restart_time")
-        [[ -n "$CONNECT_wifi_restart_retry_time" ]] && CMD_ARGS+=(--wifi_restart_retry_time "$CONNECT_wifi_restart_retry_time")
         [[ -n "$CONNECT_wifi_restart_command" ]] && CMD_ARGS+=(--wifi_restart_command "$CONNECT_wifi_restart_command")
     fi
     

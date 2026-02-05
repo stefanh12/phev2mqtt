@@ -111,15 +111,6 @@ func (c *climate) mqttStates() map[string]string {
 var lastWifiRestart time.Time
 
 func restartWifi(cmd *cobra.Command, m *mqttClient) error {
-	restartRetryTime := viper.GetDuration("wifi_restart_retry_time")
-
-	if time.Now().Sub(lastWifiRestart) < restartRetryTime {
-		return nil
-	}
-	defer func() {
-		lastWifiRestart = time.Now()
-	}()
-
 	// Check if local WiFi restart is enabled
 	localEnabled := viper.GetBool("local_wifi_restart_enabled")
 	restartCommand := viper.GetString("wifi_restart_command")
@@ -223,7 +214,6 @@ type mqttClient struct {
 	options        *mqtt.ClientOptions
 	mqttData       map[string]string
 	updateInterval time.Duration
-	retryInterval  time.Duration
 
 	phev        *client.Client
 	lastConnect time.Time
@@ -240,7 +230,6 @@ type mqttClient struct {
 
 	// WiFi restart settings
 	wifiRestartTime          time.Duration
-	wifiRestartRetryTime     time.Duration
 	wifiRestartCommand       string
 	localWifiRestartEnabled  bool
 	remoteWifiRestartEnabled bool
@@ -257,6 +246,7 @@ type mqttClient struct {
 	remoteWifiPowerSaveEnabled bool
 	remoteWifiPowerSaveWait    time.Duration
 	lastUpdateTime             time.Time
+	powerSaveWifiOn            bool
 
 	// Configuration hot reload
 	configReloader *ConfigReloader
@@ -278,12 +268,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.haDiscovery = viper.GetBool("ha_discovery")
 	m.haDiscoveryPrefix = viper.GetString("ha_discovery_prefix")
 	m.updateInterval = viper.GetDuration("update_interval")
-	m.retryInterval = viper.GetDuration("retry_interval")
-	if m.retryInterval == 0 {
-		m.retryInterval = time.Second
-	}
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
-	m.wifiRestartRetryTime = viper.GetDuration("wifi_restart_retry_time")
 	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
 	m.localWifiRestartEnabled = viper.GetBool("local_wifi_restart_enabled")
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
@@ -363,13 +348,45 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 	log.Infof("Starting connection loop to PHEV at address: %s", viper.GetString("address"))
 
+	// Initialize power save timer if enabled
+	var powerSaveTicker *time.Ticker
+	if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
+		log.Infof("Power save mode active - managing WiFi on/off cycles")
+		powerSaveTicker = time.NewTicker(m.updateInterval)
+		defer powerSaveTicker.Stop()
+		m.powerSaveWifiOn = true // Start with WiFi on
+	} else {
+		powerSaveTicker = nil
+	}
+
 	for {
+		// Power save mode: turn WiFi on at each interval
+		if powerSaveTicker != nil {
+			select {
+			case <-powerSaveTicker.C:
+				// Time to turn WiFi on for next update attempt
+				log.Debugf("Power save: turning WiFi on for update cycle")
+				m.remoteWifiEnable()
+				log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
+				time.Sleep(m.remoteWifiPowerSaveWait)
+				m.powerSaveWifiOn = true
+			default:
+				// Non-blocking
+			}
+		}
+
 		if m.enabled {
 			if err := m.handlePhev(cmd); err != nil {
 				// Do not flood the log with the same messages every second
 				if m.lastError == nil || m.lastError.Error() != err.Error() {
 					log.Errorf("PHEV connection error: %v", err)
 					m.lastError = err
+				}
+				// Turn WiFi off after failed connection attempt in power save mode
+				if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
+					log.Debugf("Power save: turning WiFi off after failed connection")
+					m.remoteWifiDisable()
+					m.powerSaveWifiOn = false
 				}
 			}
 			// Publish as offline if last connection was >30s ago.
@@ -384,7 +401,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		time.Sleep(m.retryInterval)
+		time.Sleep(60 * time.Second)
 	}
 }
 
@@ -558,14 +575,8 @@ func (m *mqttClient) onConfigReload() {
 		m.updateInterval = 5 * time.Minute
 	}
 
-	m.retryInterval = viper.GetDuration("retry_interval")
-	if m.retryInterval == 0 {
-		m.retryInterval = time.Second
-	}
-
 	// Reload WiFi restart settings
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
-	m.wifiRestartRetryTime = viper.GetDuration("wifi_restart_retry_time")
 	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
 	m.localWifiRestartEnabled = viper.GetBool("local_wifi_restart_enabled")
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
@@ -582,7 +593,6 @@ func (m *mqttClient) onConfigReload() {
 
 	log.Infof("Configuration reloaded:")
 	log.Infof("  update_interval: %v", m.updateInterval)
-	log.Infof("  retry_interval: %v", m.retryInterval)
 	log.Infof("  wifi_restart_time: %v", m.wifiRestartTime)
 	log.Infof("  local_wifi_restart_enabled: %v", m.localWifiRestartEnabled)
 	log.Infof("  remote_wifi_restart_enabled: %v", m.remoteWifiRestartEnabled)
@@ -621,10 +631,11 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 
 	defer func() {
 		m.lastConnect = time.Now()
-		// Power save mode: turn off WiFi after successful update
-		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
-			log.Debugf("Power save: turning WiFi off until next update")
+		// Turn WiFi off after connection ends in power save mode
+		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
+			log.Debugf("Power save: turning WiFi off after connection ended")
 			m.remoteWifiDisable()
+			m.powerSaveWifiOn = false
 		}
 	}()
 
@@ -635,13 +646,13 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	for {
 		select {
 		case <-updaterTicker.C:
-			// Power save mode: turn on WiFi before update
-			if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
+			// Power save mode: only turn on WiFi if NOT already managed by main loop
+			if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && !m.powerSaveWifiOn {
 				log.Debugf("Power save: turning WiFi on for update")
 				m.remoteWifiEnable()
-				// Wait for WiFi to come up
 				log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
 				time.Sleep(m.remoteWifiPowerSaveWait)
+				m.powerSaveWifiOn = true
 			}
 			m.phev.SetRegister(0x6, []byte{0x3})
 			m.lastUpdateTime = time.Now()
@@ -1108,10 +1119,8 @@ func init() {
 	mqttCmd.Flags().Bool("ha_discovery", true, "Enable Home Assistant MQTT discovery")
 	mqttCmd.Flags().String("ha_discovery_prefix", "homeassistant", "Prefix for Home Assistant MQTT discovery")
 	mqttCmd.Flags().Duration("update_interval", 5*time.Minute, "How often to request force updates")
-	mqttCmd.Flags().Duration("retry_interval", time.Second, "How often to retry connection when PHEV is not available")
 	mqttCmd.Flags().Bool("local_wifi_restart_enabled", false, "Enable local WiFi restart")
 	mqttCmd.Flags().Duration("wifi_restart_time", 0, "Attempt to restart Wifi if no connection for this long")
-	mqttCmd.Flags().Duration("wifi_restart_retry_time", 2*time.Minute, "Interval to attempt Wifi restart")
 	mqttCmd.Flags().String("wifi_restart_command", defaultWifiRestartCmd, "Command to restart Wifi connection to Phev")
 	mqttCmd.Flags().Bool("remote_wifi_restart_enabled", false, "Enable remote WiFi restart via MQTT")
 	mqttCmd.Flags().String("remote_wifi_restart_topic", "", "MQTT topic to send remote WiFi restart command (e.g., for MikroTik)")
@@ -1130,10 +1139,8 @@ func init() {
 	viper.BindPFlag("ha_discovery", mqttCmd.Flags().Lookup("ha_discovery"))
 	viper.BindPFlag("ha_discovery_prefix", mqttCmd.Flags().Lookup("ha_discovery_prefix"))
 	viper.BindPFlag("update_interval", mqttCmd.Flags().Lookup("update_interval"))
-	viper.BindPFlag("retry_interval", mqttCmd.Flags().Lookup("retry_interval"))
 	viper.BindPFlag("local_wifi_restart_enabled", mqttCmd.Flags().Lookup("local_wifi_restart_enabled"))
 	viper.BindPFlag("wifi_restart_time", mqttCmd.Flags().Lookup("wifi_restart_time"))
-	viper.BindPFlag("wifi_restart_retry_time", mqttCmd.Flags().Lookup("wifi_restart_retry_time"))
 	viper.BindPFlag("wifi_restart_command", mqttCmd.Flags().Lookup("wifi_restart_command"))
 	viper.BindPFlag("remote_wifi_restart_enabled", mqttCmd.Flags().Lookup("remote_wifi_restart_enabled"))
 	viper.BindPFlag("remote_wifi_restart_topic", mqttCmd.Flags().Lookup("remote_wifi_restart_topic"))
