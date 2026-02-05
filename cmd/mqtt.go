@@ -20,14 +20,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/buxtronix/phev2mqtt/client"
-	"github.com/buxtronix/phev2mqtt/protocol"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/buxtronix/phev2mqtt/client"
+	"github.com/buxtronix/phev2mqtt/protocol"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
@@ -77,19 +78,23 @@ func (c *climate) mqttStates() map[string]string {
 		return m
 	}
 	switch *c.state {
-	case protocol.PreACOn: m["/climate/state"] = *c.mode
-	case protocol.PreACOff: {
-		m["/climate/state"] = "off"
-		return m
-	}
-	case protocol.PreACTerminated: {
-		m["/climate/state"] = "terminated"
-		return m
-	}
-	default: {
-		m["/climate/state"] = "unknown"
-		return m
-	}
+	case protocol.PreACOn:
+		m["/climate/state"] = *c.mode
+	case protocol.PreACOff:
+		{
+			m["/climate/state"] = "off"
+			return m
+		}
+	case protocol.PreACTerminated:
+		{
+			m["/climate/state"] = "terminated"
+			return m
+		}
+	default:
+		{
+			m["/climate/state"] = "unknown"
+			return m
+		}
 	}
 	m["/climate/state"] = *c.mode
 	switch *c.mode {
@@ -118,7 +123,7 @@ func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	// Check if local WiFi restart is enabled
 	localEnabled := viper.GetBool("local_wifi_restart_enabled")
 	restartCommand := viper.GetString("wifi_restart_command")
-	
+
 	if localEnabled && restartCommand != "" {
 		log.Infof("Attempting to restart local WiFi interface")
 		restartCmd := exec.Command("/bin/sh", "-c", restartCommand)
@@ -132,7 +137,7 @@ func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	} else {
 		log.Debugf("Local WiFi restart disabled")
 	}
-	
+
 	// Check if remote WiFi restart is enabled
 	remoteEnabled := viper.GetBool("remote_wifi_restart_enabled")
 	if remoteEnabled && m.remoteWifiRestartTopic != "" {
@@ -142,7 +147,7 @@ func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	} else {
 		log.Debugf("Remote WiFi restart disabled")
 	}
-	
+
 	return nil
 }
 
@@ -150,22 +155,66 @@ func (m *mqttClient) restartRemoteWifi() {
 	if m.remoteWifiRestartTopic == "" {
 		return
 	}
-	
+
 	m.lastRemoteWifiRestart = time.Now()
-	
+
 	message := m.remoteWifiRestartMessage
 	if message == "" {
 		message = "restart"
 	}
-	
+
 	log.Infof("Sending remote WiFi restart command to topic: %s", m.remoteWifiRestartTopic)
-	
+
 	token := m.client.Publish(m.remoteWifiRestartTopic, 0, false, message)
 	token.Wait()
 	if token.Error() != nil {
 		log.Errorf("Error publishing remote WiFi restart: %v", token.Error())
 	} else {
 		log.Infof("Remote WiFi restart command sent successfully")
+	}
+}
+
+func (m *mqttClient) remoteWifiEnable() {
+	if m.remoteWifiControlTopic == "" {
+		log.Debugf("Remote WiFi control topic not configured")
+		return
+	}
+
+	message := m.remoteWifiEnableMessage
+	if message == "" {
+		message = `{"wifi": "enable"}`
+	}
+
+	log.Infof("Sending remote WiFi ENABLE command to topic: %s", m.remoteWifiControlTopic)
+
+	token := m.client.Publish(m.remoteWifiControlTopic, 0, false, message)
+	token.Wait()
+	if token.Error() != nil {
+		log.Errorf("Error publishing remote WiFi enable: %v", token.Error())
+	} else {
+		log.Infof("Remote WiFi ENABLE command sent successfully")
+	}
+}
+
+func (m *mqttClient) remoteWifiDisable() {
+	if m.remoteWifiControlTopic == "" {
+		log.Debugf("Remote WiFi control topic not configured")
+		return
+	}
+
+	message := m.remoteWifiDisableMessage
+	if message == "" {
+		message = `{"wifi": "disable"}`
+	}
+
+	log.Infof("Sending remote WiFi DISABLE command to topic: %s", m.remoteWifiControlTopic)
+
+	token := m.client.Publish(m.remoteWifiControlTopic, 0, false, message)
+	token.Wait()
+	if token.Error() != nil {
+		log.Errorf("Error publishing remote WiFi disable: %v", token.Error())
+	} else {
+		log.Infof("Remote WiFi DISABLE command sent successfully")
 	}
 }
 
@@ -182,25 +231,30 @@ type mqttClient struct {
 
 	prefix string
 
-	haDiscovery		bool
-	haDiscoveryPrefix	string
-	haPublishedDiscovery	bool
+	haDiscovery          bool
+	haDiscoveryPrefix    string
+	haPublishedDiscovery bool
 
 	climate *climate
 	enabled bool
-	
+
 	// WiFi restart settings
-	wifiRestartTime         time.Duration
-	wifiRestartRetryTime    time.Duration
-	wifiRestartCommand      string
-	localWifiRestartEnabled bool
+	wifiRestartTime          time.Duration
+	wifiRestartRetryTime     time.Duration
+	wifiRestartCommand       string
+	localWifiRestartEnabled  bool
 	remoteWifiRestartEnabled bool
-	
+
 	// Remote WiFi restart via MQTT
 	remoteWifiRestartTopic   string
 	remoteWifiRestartMessage string
 	lastRemoteWifiRestart    time.Time
-	
+
+	// Remote WiFi enable/disable control via MQTT
+	remoteWifiControlTopic   string
+	remoteWifiEnableMessage  string
+	remoteWifiDisableMessage string
+
 	// Configuration hot reload
 	configReloader *ConfigReloader
 	mu             sync.RWMutex
@@ -213,25 +267,28 @@ func (m *mqttClient) topic(topic string) string {
 func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.enabled = true // Default.
 
-	mqttServer		:= viper.GetString("mqtt_server")
-	mqttUsername		:= viper.GetString("mqtt_username")
-	mqttPassword		:= viper.GetString("mqtt_password")
-	mqttDisableSet		:= viper.GetBool("mqtt_disable_register_set_command")
-	m.prefix		 = viper.GetString("mqtt_topic_prefix")
-	m.haDiscovery		 = viper.GetBool("ha_discovery")
-	m.haDiscoveryPrefix	 = viper.GetString("ha_discovery_prefix")
-	m.updateInterval	 = viper.GetDuration("update_interval")
-	m.retryInterval		 = viper.GetDuration("retry_interval")
+	mqttServer := viper.GetString("mqtt_server")
+	mqttUsername := viper.GetString("mqtt_username")
+	mqttPassword := viper.GetString("mqtt_password")
+	mqttDisableSet := viper.GetBool("mqtt_disable_register_set_command")
+	m.prefix = viper.GetString("mqtt_topic_prefix")
+	m.haDiscovery = viper.GetBool("ha_discovery")
+	m.haDiscoveryPrefix = viper.GetString("ha_discovery_prefix")
+	m.updateInterval = viper.GetDuration("update_interval")
+	m.retryInterval = viper.GetDuration("retry_interval")
 	if m.retryInterval == 0 {
 		m.retryInterval = time.Second
 	}
-	m.wifiRestartTime		= viper.GetDuration("wifi_restart_time")
-	m.wifiRestartRetryTime		= viper.GetDuration("wifi_restart_retry_time")
-	m.wifiRestartCommand		= viper.GetString("wifi_restart_command")
-	m.localWifiRestartEnabled	= viper.GetBool("local_wifi_restart_enabled")
-	m.remoteWifiRestartEnabled	= viper.GetBool("remote_wifi_restart_enabled")
-	m.remoteWifiRestartTopic   = viper.GetString("remote_wifi_restart_topic")
+	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
+	m.wifiRestartRetryTime = viper.GetDuration("wifi_restart_retry_time")
+	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
+	m.localWifiRestartEnabled = viper.GetBool("local_wifi_restart_enabled")
+	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
+	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
+	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
+	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
 
 	if m.wifiRestartCommand == "" {
 		log.Infof("Local WiFi restart disabled")
@@ -239,9 +296,12 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	if m.remoteWifiRestartTopic != "" {
 		log.Infof("Remote WiFi restart enabled - topic: %s", m.remoteWifiRestartTopic)
 	}
+	if m.remoteWifiControlTopic != "" {
+		log.Infof("Remote WiFi control enabled - topic: %s", m.remoteWifiControlTopic)
+	}
 
-	m.haPublishedDiscovery	= false
-	m.lastError		= nil
+	m.haPublishedDiscovery = false
+	m.lastError = nil
 
 	// Initialize configuration hot reload
 	configFile := GetConfigFilePath()
@@ -318,10 +378,10 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (m *mqttClient) publish(topic, payload string) {
-//	if cache := m.mqttData[topic]; cache != payload {
-		m.client.Publish(m.topic(topic), 0, false, payload)
-		m.mqttData[topic] = payload
-//	}
+	//	if cache := m.mqttData[topic]; cache != payload {
+	m.client.Publish(m.topic(topic), 0, false, payload)
+	m.mqttData[topic] = payload
+	// }
 }
 
 func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Message) {
@@ -364,6 +424,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			if m.phev != nil {
 				m.phev.Close()
 			}
+		case "wifi_enable":
+			m.remoteWifiEnable()
+		case "wifi_disable":
+			m.remoteWifiDisable()
 		}
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
@@ -466,7 +530,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 func (m *mqttClient) onConfigReload() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Reload log level if debug flag changed
 	debugMode := viper.GetBool("debug")
 	if debugMode {
@@ -476,18 +540,18 @@ func (m *mqttClient) onConfigReload() {
 		log.SetLevel(log.InfoLevel)
 		log.Infof("Log level changed to: info")
 	}
-	
+
 	// Reload configuration values
 	m.updateInterval = viper.GetDuration("update_interval")
 	if m.updateInterval == 0 {
 		m.updateInterval = 5 * time.Minute
 	}
-	
+
 	m.retryInterval = viper.GetDuration("retry_interval")
 	if m.retryInterval == 0 {
 		m.retryInterval = time.Second
 	}
-	
+
 	// Reload WiFi restart settings
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
 	m.wifiRestartRetryTime = viper.GetDuration("wifi_restart_retry_time")
@@ -496,7 +560,10 @@ func (m *mqttClient) onConfigReload() {
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
 	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
-	
+	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
+	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
+	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
+
 	log.Infof("Configuration reloaded:")
 	log.Infof("  update_interval: %v", m.updateInterval)
 	log.Infof("  retry_interval: %v", m.retryInterval)
@@ -505,6 +572,9 @@ func (m *mqttClient) onConfigReload() {
 	log.Infof("  remote_wifi_restart_enabled: %v", m.remoteWifiRestartEnabled)
 	if m.remoteWifiRestartTopic != "" {
 		log.Infof("  remote_wifi_restart_topic: %s", m.remoteWifiRestartTopic)
+	}
+	if m.remoteWifiControlTopic != "" {
+		log.Infof("  remote_wifi_control_topic: %s", m.remoteWifiControlTopic)
 	}
 }
 
@@ -636,7 +706,7 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 			m.publish("/battery/level", fmt.Sprintf("%d", reg.Level))
 		} else {
 			if cache := m.mqttData["/battery/level"]; cache != "" {
-				m.publish("/battery/level", cache )
+				m.publish("/battery/level", cache)
 				log.Debugf("Ignoring battery level reading: %v, publishing last best known: %v", reg.Level, cache)
 			}
 		}
@@ -982,7 +1052,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			d = strings.Replace(d, in, out, -1)
 		}
 		if token := m.client.Publish(topic, 0, true, d); token.Wait() && token.Error() != nil {
-			log.Error( token.Error() )
+			log.Error(token.Error())
 		}
 		//m.client.Publish(topic, 0, false, "{}")
 	}
@@ -1016,6 +1086,9 @@ func init() {
 	mqttCmd.Flags().Bool("remote_wifi_restart_enabled", false, "Enable remote WiFi restart via MQTT")
 	mqttCmd.Flags().String("remote_wifi_restart_topic", "", "MQTT topic to send remote WiFi restart command (e.g., for MikroTik)")
 	mqttCmd.Flags().String("remote_wifi_restart_message", "restart", "Message payload for remote WiFi restart")
+	mqttCmd.Flags().String("remote_wifi_control_topic", "", "MQTT topic to send remote WiFi enable/disable commands")
+	mqttCmd.Flags().String("remote_wifi_enable_message", `{"wifi": "enable"}`, "Message payload for remote WiFi enable")
+	mqttCmd.Flags().String("remote_wifi_disable_message", `{"wifi": "disable"}`, "Message payload for remote WiFi disable")
 
 	viper.BindPFlag("mqtt_server", mqttCmd.Flags().Lookup("mqtt_server"))
 	viper.BindPFlag("mqtt_username", mqttCmd.Flags().Lookup("mqtt_username"))
@@ -1033,4 +1106,7 @@ func init() {
 	viper.BindPFlag("remote_wifi_restart_enabled", mqttCmd.Flags().Lookup("remote_wifi_restart_enabled"))
 	viper.BindPFlag("remote_wifi_restart_topic", mqttCmd.Flags().Lookup("remote_wifi_restart_topic"))
 	viper.BindPFlag("remote_wifi_restart_message", mqttCmd.Flags().Lookup("remote_wifi_restart_message"))
+	viper.BindPFlag("remote_wifi_control_topic", mqttCmd.Flags().Lookup("remote_wifi_control_topic"))
+	viper.BindPFlag("remote_wifi_enable_message", mqttCmd.Flags().Lookup("remote_wifi_enable_message"))
+	viper.BindPFlag("remote_wifi_disable_message", mqttCmd.Flags().Lookup("remote_wifi_disable_message"))
 }

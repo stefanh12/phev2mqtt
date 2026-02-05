@@ -112,6 +112,17 @@ remote_wifi_restart_topic=mikrotik/phev/restart
 remote_wifi_restart_message=restart
 
 # ==========================================
+# Remote WiFi Control Configuration (optional)
+# ==========================================
+# Send MQTT commands to enable/disable WiFi on remote device
+# remote_wifi_control_topic: MQTT topic to publish wifi control commands to
+# remote_wifi_enable_message: Message payload to enable wifi
+# remote_wifi_disable_message: Message payload to disable wifi
+remote_wifi_control_topic=homeassistant/sensor/mikrotik_sqtsqlite2garage/wifi
+remote_wifi_enable_message={"wifi": "enable"}
+remote_wifi_disable_message={"wifi": "disable"}
+
+# ==========================================
 # Additional Arguments (optional)
 # ==========================================
 # Any extra command-line arguments to pass to phev2mqtt
@@ -148,6 +159,9 @@ export CONNECT_wifi_restart_command=$wifi_restart_command
 export CONNECT_remote_wifi_restart_enabled=$remote_wifi_restart_enabled
 export CONNECT_remote_wifi_restart_topic=$remote_wifi_restart_topic
 export CONNECT_remote_wifi_restart_message=$remote_wifi_restart_message
+export CONNECT_remote_wifi_control_topic=$remote_wifi_control_topic
+export CONNECT_remote_wifi_enable_message=$remote_wifi_enable_message
+export CONNECT_remote_wifi_disable_message=$remote_wifi_disable_message
 
 
 echo "Using the following environment variables:"
@@ -220,6 +234,11 @@ else
         [[ -n "$CONNECT_remote_wifi_restart_topic" ]] && CMD_ARGS+=(--remote_wifi_restart_topic "$CONNECT_remote_wifi_restart_topic")
         [[ -n "$CONNECT_remote_wifi_restart_message" ]] && CMD_ARGS+=(--remote_wifi_restart_message "$CONNECT_remote_wifi_restart_message")
     fi
+    
+    # Add remote WiFi control parameters if set
+    [[ -n "$CONNECT_remote_wifi_control_topic" ]] && CMD_ARGS+=(--remote_wifi_control_topic "$CONNECT_remote_wifi_control_topic")
+    [[ -n "$CONNECT_remote_wifi_enable_message" ]] && CMD_ARGS+=(--remote_wifi_enable_message "$CONNECT_remote_wifi_enable_message")
+    [[ -n "$CONNECT_remote_wifi_disable_message" ]] && CMD_ARGS+=(--remote_wifi_disable_message "$CONNECT_remote_wifi_disable_message")
     
     [[ -n "$CONNECT_extra_add" ]] && CMD_ARGS+=($CONNECT_extra_add)
     
