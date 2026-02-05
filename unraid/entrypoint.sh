@@ -122,6 +122,13 @@ remote_wifi_control_topic=homeassistant/sensor/mikrotik_sqtsqlite2garage/wifi
 remote_wifi_enable_message={"wifi": "enable"}
 remote_wifi_disable_message={"wifi": "disable"}
 
+# Remote WiFi Power Save Mode (optional)
+# Automatically turn off WiFi between update intervals to save power
+# Only activates when update_interval > 1 minute and remote_wifi_control_topic is configured
+# WiFi is turned on shortly before each update, then off after completion
+remote_wifi_power_save_enabled=false
+remote_wifi_power_save_wait=5s
+
 # ==========================================
 # Additional Arguments (optional)
 # ==========================================
@@ -162,6 +169,8 @@ export CONNECT_remote_wifi_restart_message=$remote_wifi_restart_message
 export CONNECT_remote_wifi_control_topic=$remote_wifi_control_topic
 export CONNECT_remote_wifi_enable_message=$remote_wifi_enable_message
 export CONNECT_remote_wifi_disable_message=$remote_wifi_disable_message
+export CONNECT_remote_wifi_power_save_enabled=$remote_wifi_power_save_enabled
+export CONNECT_remote_wifi_power_save_wait=$remote_wifi_power_save_wait
 
 
 echo "Using the following environment variables:"
@@ -239,6 +248,8 @@ else
     [[ -n "$CONNECT_remote_wifi_control_topic" ]] && CMD_ARGS+=(--remote_wifi_control_topic "$CONNECT_remote_wifi_control_topic")
     [[ -n "$CONNECT_remote_wifi_enable_message" ]] && CMD_ARGS+=(--remote_wifi_enable_message "$CONNECT_remote_wifi_enable_message")
     [[ -n "$CONNECT_remote_wifi_disable_message" ]] && CMD_ARGS+=(--remote_wifi_disable_message "$CONNECT_remote_wifi_disable_message")
+    [[ "$CONNECT_remote_wifi_power_save_enabled" == "true" ]] && CMD_ARGS+=(--remote_wifi_power_save_enabled)
+    [[ -n "$CONNECT_remote_wifi_power_save_wait" ]] && CMD_ARGS+=(--remote_wifi_power_save_wait "$CONNECT_remote_wifi_power_save_wait")
     
     [[ -n "$CONNECT_extra_add" ]] && CMD_ARGS+=($CONNECT_extra_add)
     

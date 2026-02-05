@@ -251,9 +251,12 @@ type mqttClient struct {
 	lastRemoteWifiRestart    time.Time
 
 	// Remote WiFi enable/disable control via MQTT
-	remoteWifiControlTopic   string
-	remoteWifiEnableMessage  string
-	remoteWifiDisableMessage string
+	remoteWifiControlTopic     string
+	remoteWifiEnableMessage    string
+	remoteWifiDisableMessage   string
+	remoteWifiPowerSaveEnabled bool
+	remoteWifiPowerSaveWait    time.Duration
+	lastUpdateTime             time.Time
 
 	// Configuration hot reload
 	configReloader *ConfigReloader
@@ -289,6 +292,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
+	m.remoteWifiPowerSaveEnabled = viper.GetBool("remote_wifi_power_save_enabled")
+	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
+	if m.remoteWifiPowerSaveWait == 0 {
+		m.remoteWifiPowerSaveWait = 5 * time.Second
+	}
 
 	if m.wifiRestartCommand == "" {
 		log.Infof("Local WiFi restart disabled")
@@ -298,6 +306,9 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	}
 	if m.remoteWifiControlTopic != "" {
 		log.Infof("Remote WiFi control enabled - topic: %s", m.remoteWifiControlTopic)
+		if m.remoteWifiPowerSaveEnabled && m.updateInterval > time.Minute {
+			log.Infof("Remote WiFi power save mode ENABLED - WiFi will be turned off between updates")
+		}
 	}
 
 	m.haPublishedDiscovery = false
@@ -563,6 +574,11 @@ func (m *mqttClient) onConfigReload() {
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
+	m.remoteWifiPowerSaveEnabled = viper.GetBool("remote_wifi_power_save_enabled")
+	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
+	if m.remoteWifiPowerSaveWait == 0 {
+		m.remoteWifiPowerSaveWait = 5 * time.Second
+	}
 
 	log.Infof("Configuration reloaded:")
 	log.Infof("  update_interval: %v", m.updateInterval)
@@ -605,6 +621,11 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 
 	defer func() {
 		m.lastConnect = time.Now()
+		// Power save mode: turn off WiFi after successful update
+		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
+			log.Debugf("Power save: turning WiFi off until next update")
+			m.remoteWifiDisable()
+		}
 	}()
 
 	var encodingErrorCount = 0
@@ -614,7 +635,16 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	for {
 		select {
 		case <-updaterTicker.C:
+			// Power save mode: turn on WiFi before update
+			if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
+				log.Debugf("Power save: turning WiFi on for update")
+				m.remoteWifiEnable()
+				// Wait for WiFi to come up
+				log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
+				time.Sleep(m.remoteWifiPowerSaveWait)
+			}
 			m.phev.SetRegister(0x6, []byte{0x3})
+			m.lastUpdateTime = time.Now()
 		case msg, ok := <-m.phev.Recv:
 			if !ok {
 				log.Infof("Connection closed.")
@@ -1089,6 +1119,8 @@ func init() {
 	mqttCmd.Flags().String("remote_wifi_control_topic", "", "MQTT topic to send remote WiFi enable/disable commands")
 	mqttCmd.Flags().String("remote_wifi_enable_message", `{"wifi": "enable"}`, "Message payload for remote WiFi enable")
 	mqttCmd.Flags().String("remote_wifi_disable_message", `{"wifi": "disable"}`, "Message payload for remote WiFi disable")
+	mqttCmd.Flags().Bool("remote_wifi_power_save_enabled", false, "Enable power save mode to turn WiFi off between updates")
+	mqttCmd.Flags().Duration("remote_wifi_power_save_wait", 5*time.Second, "Time to wait after turning WiFi on for link to establish")
 
 	viper.BindPFlag("mqtt_server", mqttCmd.Flags().Lookup("mqtt_server"))
 	viper.BindPFlag("mqtt_username", mqttCmd.Flags().Lookup("mqtt_username"))
@@ -1109,4 +1141,6 @@ func init() {
 	viper.BindPFlag("remote_wifi_control_topic", mqttCmd.Flags().Lookup("remote_wifi_control_topic"))
 	viper.BindPFlag("remote_wifi_enable_message", mqttCmd.Flags().Lookup("remote_wifi_enable_message"))
 	viper.BindPFlag("remote_wifi_disable_message", mqttCmd.Flags().Lookup("remote_wifi_disable_message"))
+	viper.BindPFlag("remote_wifi_power_save_enabled", mqttCmd.Flags().Lookup("remote_wifi_power_save_enabled"))
+	viper.BindPFlag("remote_wifi_power_save_wait", mqttCmd.Flags().Lookup("remote_wifi_power_save_wait"))
 }
