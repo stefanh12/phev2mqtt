@@ -26,7 +26,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGE_NAME: phev2mqtt
-          OWNER: stefanh12
+          OWNER: ${{ github.repository_owner }}
           # Number of recent versions to keep
           KEEP_VERSIONS: 3
         run: |
@@ -91,15 +91,17 @@ jobs:
             echo "   Info: $version_info"
             
             # Delete the version
-            if gh api \
+            echo "Attempting to delete version $version_id..."
+            if delete_output=$(gh api \
               --method DELETE \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/users/$OWNER/packages/container/$PACKAGE_NAME/versions/$version_id"; then
+              "/users/$OWNER/packages/container/$PACKAGE_NAME/versions/$version_id" 2>&1); then
               deleted_count=$((deleted_count + 1))
               echo "   ✅ Successfully deleted version $version_id"
             else
               echo "   ⚠️  Failed to delete version $version_id"
+              echo "   Error details: $delete_output"
             fi
             echo ""
           done
