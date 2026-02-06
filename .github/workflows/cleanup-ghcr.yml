@@ -1,0 +1,112 @@
+name: Cleanup GitHub Container Registry
+
+# This workflow automatically cleans up old container images from GHCR
+# to help manage storage and stay within GitHub Free's 500 MB limit.
+# It keeps the 3 most recent versions for rollback purposes.
+
+on:
+  # Run daily at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to delete package versions
+      packages: write
+      # Required to read repository information
+      contents: read
+    
+    steps:
+      - name: Cleanup old container images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_NAME: phev2mqtt
+          OWNER: stefanh12
+          # Number of recent versions to keep
+          KEEP_VERSIONS: 3
+        run: |
+          set -e
+          
+          echo "🧹 Starting cleanup of old container images..."
+          echo "Package: $PACKAGE_NAME"
+          echo "Keeping: $KEEP_VERSIONS most recent versions"
+          echo ""
+          
+          # Get all package versions sorted by creation date (newest first)
+          echo "📦 Fetching package versions..."
+          versions=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/users/$OWNER/packages/container/$PACKAGE_NAME/versions" \
+            --jq 'sort_by(.created_at) | reverse | .[].id')
+          
+          if [ -z "$versions" ]; then
+            echo "ℹ️  No package versions found."
+            exit 0
+          fi
+          
+          # Count total versions
+          total_versions=$(echo "$versions" | wc -l)
+          echo "Total versions found: $total_versions"
+          
+          # Check if we need to delete anything
+          if [ "$total_versions" -le "$KEEP_VERSIONS" ]; then
+            echo "✅ Only $total_versions version(s) exist. Nothing to delete."
+            exit 0
+          fi
+          
+          # Calculate how many versions to delete
+          versions_to_delete=$((total_versions - KEEP_VERSIONS))
+          echo "🗑️  Will delete $versions_to_delete old version(s)..."
+          echo ""
+          
+          # Skip the first KEEP_VERSIONS and delete the rest
+          version_count=0
+          deleted_count=0
+          
+          for version_id in $versions; do
+            version_count=$((version_count + 1))
+            
+            # Skip the first KEEP_VERSIONS (most recent)
+            if [ "$version_count" -le "$KEEP_VERSIONS" ]; then
+              echo "⏭️  Keeping version ID: $version_id (rank: $version_count)"
+              continue
+            fi
+            
+            # Get version details for logging
+            echo "Fetching details for version ID: $version_id..."
+            version_info=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/users/$OWNER/packages/container/$PACKAGE_NAME/versions/$version_id" \
+              --jq '{name: .name, tags: .metadata.container.tags, created_at: .created_at}')
+            
+            echo "🗑️  Deleting old version:"
+            echo "   ID: $version_id"
+            echo "   Info: $version_info"
+            
+            # Delete the version
+            if gh api \
+              --method DELETE \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/users/$OWNER/packages/container/$PACKAGE_NAME/versions/$version_id"; then
+              deleted_count=$((deleted_count + 1))
+              echo "   ✅ Successfully deleted version $version_id"
+            else
+              echo "   ⚠️  Failed to delete version $version_id"
+            fi
+            echo ""
+          done
+          
+          echo "========================================="
+          echo "🎉 Cleanup completed!"
+          echo "Total versions processed: $total_versions"
+          echo "Versions kept: $KEEP_VERSIONS"
+          echo "Versions deleted: $deleted_count"
+          echo "========================================="
