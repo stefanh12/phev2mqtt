@@ -132,7 +132,7 @@ func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	// Check if remote WiFi restart is enabled
 	remoteEnabled := viper.GetBool("remote_wifi_restart_enabled")
 	if remoteEnabled && m.remoteWifiRestartTopic != "" {
-		if time.Now().Sub(m.lastRemoteWifiRestart) > 2*time.Minute {
+		if time.Now().Sub(m.lastRemoteWifiRestart) > m.remoteWifiRestartMinInterval {
 			m.restartRemoteWifi()
 		}
 	} else {
@@ -209,6 +209,20 @@ func (m *mqttClient) remoteWifiDisable() {
 	}
 }
 
+// ensureWifiOn ensures WiFi is on before sending a command, even if power save is active
+func (m *mqttClient) ensureWifiOn() {
+	// Only act if power save mode is enabled and WiFi is currently off
+	if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && !m.powerSaveWifiOn {
+		log.Infof("Command requested while power save active - turning on WiFi")
+		m.remoteWifiEnable()
+		log.Infof("Waiting %v for WiFi link to establish before sending command", m.remoteWifiPowerSaveWait)
+		time.Sleep(m.remoteWifiPowerSaveWait)
+		m.powerSaveWifiOn = true
+	}
+	// Track command time to keep WiFi on for status updates
+	m.lastCommandTime = time.Now()
+}
+
 type mqttClient struct {
 	client         mqtt.Client
 	options        *mqtt.ClientOptions
@@ -247,6 +261,15 @@ type mqttClient struct {
 	remoteWifiPowerSaveWait    time.Duration
 	lastUpdateTime             time.Time
 	powerSaveWifiOn            bool
+	lastCommandTime            time.Time
+	remoteWifiCommandWait      time.Duration
+
+	// Advanced timeout settings
+	connectionRetryInterval       time.Duration
+	availabilityOfflineTimeout    time.Duration
+	remoteWifiRestartMinInterval  time.Duration
+	encodingErrorResetInterval    time.Duration
+	configReloadInterval          time.Duration
 
 	// Configuration hot reload
 	configReloader *ConfigReloader
@@ -257,23 +280,130 @@ func (m *mqttClient) topic(topic string) string {
 	return fmt.Sprintf("%s%s", m.prefix, topic)
 }
 
+// validateConfig validates configuration values and returns an error if any are invalid
+func (m *mqttClient) validateConfig() error {
+	// Validate MQTT server is set
+	if viper.GetString("mqtt_server") == "" {
+		return fmt.Errorf("mqtt_server is required but not set")
+	}
+
+	// Validate update_interval is positive
+	if m.updateInterval <= 0 {
+		log.Warnf("update_interval is invalid (%v), using default of 5 minutes", m.updateInterval)
+		m.updateInterval = 5 * time.Minute
+	}
+	if m.updateInterval < 30*time.Second {
+		log.Warnf("update_interval is very short (%v), consider using at least 30 seconds", m.updateInterval)
+	}
+
+	// Validate wifi_restart_time if set
+	if m.wifiRestartTime < 0 {
+		log.Warnf("wifi_restart_time cannot be negative (%v), disabling", m.wifiRestartTime)
+		m.wifiRestartTime = 0
+	}
+
+	// Validate remote_wifi_power_save_wait
+	if m.remoteWifiPowerSaveWait < 0 {
+		log.Warnf("remote_wifi_power_save_wait cannot be negative (%v), using default of 5 seconds", m.remoteWifiPowerSaveWait)
+		m.remoteWifiPowerSaveWait = 5 * time.Second
+	}
+	if m.remoteWifiPowerSaveWait > 60*time.Second {
+		log.Warnf("remote_wifi_power_save_wait is very long (%v), consider using less than 60 seconds", m.remoteWifiPowerSaveWait)
+	}
+
+	// Validate remote_wifi_command_wait
+	if m.remoteWifiCommandWait < 0 {
+		log.Warnf("remote_wifi_command_wait cannot be negative (%v), using default of 10 seconds", m.remoteWifiCommandWait)
+		m.remoteWifiCommandWait = 10 * time.Second
+	}
+	if m.remoteWifiCommandWait > 60*time.Second {
+		log.Warnf("remote_wifi_command_wait is very long (%v), consider using less than 60 seconds", m.remoteWifiCommandWait)
+	}
+
+	// Validate advanced timeout settings
+	if m.connectionRetryInterval < 10*time.Second {
+		log.Warnf("connection_retry_interval is very short (%v), consider using at least 10 seconds", m.connectionRetryInterval)
+	}
+	if m.connectionRetryInterval > 5*time.Minute {
+		log.Warnf("connection_retry_interval is very long (%v), consider using less than 5 minutes", m.connectionRetryInterval)
+	}
+
+	if m.availabilityOfflineTimeout < 10*time.Second {
+		log.Warnf("availability_offline_timeout is very short (%v), consider using at least 10 seconds", m.availabilityOfflineTimeout)
+	}
+	if m.availabilityOfflineTimeout > 2*time.Minute {
+		log.Warnf("availability_offline_timeout is very long (%v), consider using less than 2 minutes", m.availabilityOfflineTimeout)
+	}
+
+	if m.remoteWifiRestartMinInterval < 30*time.Second {
+		log.Warnf("remote_wifi_restart_min_interval is very short (%v), consider using at least 30 seconds", m.remoteWifiRestartMinInterval)
+	}
+
+	if m.encodingErrorResetInterval < 5*time.Second {
+		log.Warnf("encoding_error_reset_interval is very short (%v), consider using at least 5 seconds", m.encodingErrorResetInterval)
+	}
+
+	if m.configReloadInterval < 1*time.Second {
+		log.Warnf("config_reload_interval is very short (%v), consider using at least 1 second", m.configReloadInterval)
+	}
+	if m.configReloadInterval > 30*time.Second {
+		log.Warnf("config_reload_interval is very long (%v), consider using less than 30 seconds", m.configReloadInterval)
+	}
+
+	// Validate WiFi restart settings consistency
+	if m.localWifiRestartEnabled && m.wifiRestartCommand == "" {
+		log.Warnf("local_wifi_restart_enabled is true but wifi_restart_command is not set, disabling local restart")
+		m.localWifiRestartEnabled = false
+	}
+
+	// Validate remote WiFi restart settings consistency
+	if m.remoteWifiRestartEnabled && m.remoteWifiRestartTopic == "" {
+		log.Warnf("remote_wifi_restart_enabled is true but remote_wifi_restart_topic is not set, disabling remote restart")
+		m.remoteWifiRestartEnabled = false
+	}
+
+	// Validate remote WiFi power control settings consistency
+	if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic == "" {
+		log.Warnf("remote_wifi_power_save_enabled is true but remote_wifi_control_topic is not set, disabling power save")
+		m.remoteWifiPowerSaveEnabled = false
+	}
+
+	// Validate power save only makes sense with longer update intervals
+	if m.remoteWifiPowerSaveEnabled && m.updateInterval <= time.Minute {
+		log.Warnf("remote_wifi_power_save_enabled is true but update_interval (%v) is <= 1 minute, power save may not be beneficial", m.updateInterval)
+	}
+
+	return nil
+}
+
 func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.enabled = true // Default.
 
+	// MQTT Configuration
 	mqttServer := viper.GetString("mqtt_server")
 	mqttUsername := viper.GetString("mqtt_username")
 	mqttPassword := viper.GetString("mqtt_password")
 	mqttDisableSet := viper.GetBool("mqtt_disable_register_set_command")
 	m.prefix = viper.GetString("mqtt_topic_prefix")
+
+	// Home Assistant Integration
 	m.haDiscovery = viper.GetBool("ha_discovery")
 	m.haDiscoveryPrefix = viper.GetString("ha_discovery_prefix")
+
+	// Update Interval
 	m.updateInterval = viper.GetDuration("update_interval")
+
+	// Local WiFi Restart Configuration
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
 	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
 	m.localWifiRestartEnabled = viper.GetBool("local_wifi_restart_enabled")
+
+	// Remote WiFi Restart Configuration
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
 	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+
+	// Remote WiFi Power Control Configuration
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
@@ -281,6 +411,37 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
 	if m.remoteWifiPowerSaveWait == 0 {
 		m.remoteWifiPowerSaveWait = 5 * time.Second
+	}
+	m.remoteWifiCommandWait = viper.GetDuration("remote_wifi_command_wait")
+	if m.remoteWifiCommandWait == 0 {
+		m.remoteWifiCommandWait = 10 * time.Second
+	}
+
+	// Advanced Timeout Settings
+	m.connectionRetryInterval = viper.GetDuration("connection_retry_interval")
+	if m.connectionRetryInterval == 0 {
+		m.connectionRetryInterval = 60 * time.Second
+	}
+	m.availabilityOfflineTimeout = viper.GetDuration("availability_offline_timeout")
+	if m.availabilityOfflineTimeout == 0 {
+		m.availabilityOfflineTimeout = 30 * time.Second
+	}
+	m.remoteWifiRestartMinInterval = viper.GetDuration("remote_wifi_restart_min_interval")
+	if m.remoteWifiRestartMinInterval == 0 {
+		m.remoteWifiRestartMinInterval = 2 * time.Minute
+	}
+	m.encodingErrorResetInterval = viper.GetDuration("encoding_error_reset_interval")
+	if m.encodingErrorResetInterval == 0 {
+		m.encodingErrorResetInterval = 15 * time.Second
+	}
+	m.configReloadInterval = viper.GetDuration("config_reload_interval")
+	if m.configReloadInterval == 0 {
+		m.configReloadInterval = 5 * time.Second
+	}
+
+	// Validate configuration
+	if err := m.validateConfig(); err != nil {
+		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 
 	if m.wifiRestartCommand == "" {
@@ -301,7 +462,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 	// Initialize configuration hot reload
 	configFile := GetConfigFilePath()
-	m.configReloader = NewConfigReloader(configFile, 5*time.Second)
+	m.configReloader = NewConfigReloader(configFile, m.configReloadInterval)
 	m.configReloader.SetReloadCallback(m.onConfigReload)
 	m.configReloader.Start()
 	defer m.configReloader.Stop()
@@ -389,8 +550,8 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 					m.powerSaveWifiOn = false
 				}
 			}
-			// Publish as offline if last connection was >30s ago.
-			if time.Now().Sub(m.lastConnect) > 30*time.Second {
+			// Publish as offline if last connection was >availability_offline_timeout ago.
+			if time.Now().Sub(m.lastConnect) > m.availabilityOfflineTimeout {
 				m.client.Publish(m.topic("/available"), 0, true, "offline")
 			}
 			// Restart Wifi interface if > wifi_restart_time.
@@ -401,13 +562,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		time.Sleep(60 * time.Second)
+		time.Sleep(m.connectionRetryInterval)
 	}
 }
 
 func (m *mqttClient) publish(topic, payload string) {
-	//	if cache := m.mqttData[topic]; cache != payload {
-	m.client.Publish(m.topic(topic), 0, false, payload)
 	m.mqttData[topic] = payload
 	// }
 }
@@ -431,6 +590,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			log.Infof("Bad payload [%s]: %v", msg.Payload(), err)
 			return
 		}
+		m.ensureWifiOn()
 		if err := m.phev.SetRegister(register[0], data); err != nil {
 			log.Infof("Error setting register %02x: %v", register[0], err)
 			return
@@ -460,6 +620,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
+			m.ensureWifiOn()
 			if err := m.phev.SetRegister(0xb, []byte{v}); err != nil {
 				log.Infof("Error setting register 0xb: %v", err)
 				return
@@ -468,12 +629,14 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if msg.Topic() == m.topic("/set/headlights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
+			m.ensureWifiOn()
 			if err := m.phev.SetRegister(0xa, []byte{v}); err != nil {
 				log.Infof("Error setting register 0xb: %v", err)
 				return
 			}
 		}
 	} else if msg.Topic() == m.topic("/set/cancelchargetimer") {
+		m.ensureWifiOn()
 		if err := m.phev.SetRegister(0x17, []byte{0x1}); err != nil {
 			log.Infof("Error setting register 0x17: %v", err)
 			return
@@ -485,6 +648,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if strings.HasPrefix(msg.Topic(), m.topic("/set/climate/state")) {
 		payload := strings.ToLower(string(msg.Payload()))
 		if payload == "reset" {
+			m.ensureWifiOn()
 			if err := m.phev.SetRegister(protocol.SetAckPreACTermRegister, []byte{0x1}); err != nil {
 				log.Infof("Error acknowledging Pre-AC termination: %v", err)
 				return
@@ -515,6 +679,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			return
 		}
 
+		m.ensureWifiOn()
 		if m.phev.ModelYear == client.ModelYear14 {
 			// Set the AC mode first
 			registerPayload := bytes.Repeat([]byte{0xff}, 15)
@@ -569,19 +734,23 @@ func (m *mqttClient) onConfigReload() {
 		log.Infof("Log level changed to: info")
 	}
 
-	// Reload configuration values
+	// Update Interval
 	m.updateInterval = viper.GetDuration("update_interval")
 	if m.updateInterval == 0 {
 		m.updateInterval = 5 * time.Minute
 	}
 
-	// Reload WiFi restart settings
+	// Local WiFi Restart Configuration
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
 	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
 	m.localWifiRestartEnabled = viper.GetBool("local_wifi_restart_enabled")
+
+	// Remote WiFi Restart Configuration
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
 	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+
+	// Remote WiFi Power Control Configuration
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
@@ -589,6 +758,38 @@ func (m *mqttClient) onConfigReload() {
 	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
 	if m.remoteWifiPowerSaveWait == 0 {
 		m.remoteWifiPowerSaveWait = 5 * time.Second
+	}
+	m.remoteWifiCommandWait = viper.GetDuration("remote_wifi_command_wait")
+	if m.remoteWifiCommandWait == 0 {
+		m.remoteWifiCommandWait = 10 * time.Second
+	}
+
+	// Advanced Timeout Settings
+	m.connectionRetryInterval = viper.GetDuration("connection_retry_interval")
+	if m.connectionRetryInterval == 0 {
+		m.connectionRetryInterval = 60 * time.Second
+	}
+	m.availabilityOfflineTimeout = viper.GetDuration("availability_offline_timeout")
+	if m.availabilityOfflineTimeout == 0 {
+		m.availabilityOfflineTimeout = 30 * time.Second
+	}
+	m.remoteWifiRestartMinInterval = viper.GetDuration("remote_wifi_restart_min_interval")
+	if m.remoteWifiRestartMinInterval == 0 {
+		m.remoteWifiRestartMinInterval = 2 * time.Minute
+	}
+	m.encodingErrorResetInterval = viper.GetDuration("encoding_error_reset_interval")
+	if m.encodingErrorResetInterval == 0 {
+		m.encodingErrorResetInterval = 15 * time.Second
+	}
+	m.configReloadInterval = viper.GetDuration("config_reload_interval")
+	if m.configReloadInterval == 0 {
+		m.configReloadInterval = 5 * time.Second
+	}
+
+	// Validate configuration
+	if err := m.validateConfig(); err != nil {
+		log.Errorf("Configuration validation failed after reload: %v", err)
+		return
 	}
 
 	log.Infof("Configuration reloaded:")
@@ -633,6 +834,13 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 		m.lastConnect = time.Now()
 		// Turn WiFi off after connection ends in power save mode
 		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
+			// Check if a command was recently sent - keep WiFi on to receive status update
+			timeSinceCommand := time.Since(m.lastCommandTime)
+			if !m.lastCommandTime.IsZero() && timeSinceCommand < m.remoteWifiCommandWait {
+				remaining := m.remoteWifiCommandWait - timeSinceCommand
+				log.Infof("Power save: keeping WiFi on for %v after command to receive status update", remaining)
+				time.Sleep(remaining)
+			}
 			log.Debugf("Power save: turning WiFi off after connection ended")
 			m.remoteWifiDisable()
 			m.powerSaveWifiOn = false
@@ -664,7 +872,7 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 			}
 			switch msg.Type {
 			case protocol.CmdInBadEncoding:
-				if time.Now().Sub(lastEncodingError) > 15*time.Second {
+				if time.Now().Sub(lastEncodingError) > m.encodingErrorResetInterval {
 					encodingErrorCount = 0
 				}
 				if encodingErrorCount > 50 {
