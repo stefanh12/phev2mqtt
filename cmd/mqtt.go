@@ -517,7 +517,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.lastError = nil
 
 	// Initialize configuration hot reload
-	configFile := GetConfigFilePath()
+	configFile = GetConfigFilePath()
 	m.configReloader = NewConfigReloader(configFile, m.configReloadInterval)
 	m.configReloader.SetReloadCallback(m.onConfigReload)
 	m.configReloader.Start()
