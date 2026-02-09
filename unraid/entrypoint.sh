@@ -75,6 +75,14 @@ log_level=info
 route_add=192.168.1.1
 
 # ==========================================
+# Home Assistant Integration (optional)
+# ==========================================
+# Vehicle VIN for Home Assistant discovery
+# Setting this enables immediate discovery on startup without waiting for PHEV connection
+# Leave empty to wait for VIN from vehicle (discovery delayed until first connection)
+vehicle_vin=
+
+# ==========================================
 # Update Interval (optional)
 # ==========================================
 # How often to request force updates from the PHEV
@@ -172,6 +180,7 @@ export CONNECT_remote_wifi_enable_message=$remote_wifi_enable_message
 export CONNECT_remote_wifi_disable_message=$remote_wifi_disable_message
 export CONNECT_remote_wifi_power_save_enabled=$remote_wifi_power_save_enabled
 export CONNECT_remote_wifi_power_save_wait=$remote_wifi_power_save_wait
+export CONNECT_vehicle_vin=$vehicle_vin
 
 
 echo "Using the following environment variables:"
@@ -229,6 +238,7 @@ else
     
     # Add optional parameters if set
     [[ -n "$CONNECT_update_interval" ]] && CMD_ARGS+=(--update_interval "$CONNECT_update_interval")
+    [[ -n "$CONNECT_vehicle_vin" ]] && CMD_ARGS+=(--vehicle_vin "$CONNECT_vehicle_vin")
     
     # Add WiFi restart parameters only if enabled
     if [[ "$CONNECT_local_wifi_restart_enabled" == "true" ]]; then
