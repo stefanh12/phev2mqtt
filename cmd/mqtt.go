@@ -240,6 +240,7 @@ type mqttClient struct {
 	haDiscovery          bool
 	haDiscoveryPrefix    string
 	haPublishedDiscovery bool
+	vehicleVIN           string
 
 	climate *climate
 	enabled bool
@@ -393,6 +394,11 @@ func (m *mqttClient) validateConfig() error {
 		log.Warnf("remote_wifi_power_save_enabled is true but update_interval (%v) is <= 1 minute, power save may not be beneficial", m.updateInterval)
 	}
 
+	// Validate VIN for Home Assistant discovery
+	if m.haDiscovery && m.vehicleVIN == "" {
+		log.Warnf("Home Assistant discovery enabled but vehicle_vin not configured - discovery will be delayed until VIN received from PHEV")
+	}
+
 	return nil
 }
 
@@ -409,6 +415,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	// Home Assistant Integration
 	m.haDiscovery = viper.GetBool("ha_discovery")
 	m.haDiscoveryPrefix = viper.GetString("ha_discovery_prefix")
+	m.vehicleVIN = viper.GetString("vehicle_vin")
 
 	// Update Interval
 	m.updateInterval = viper.GetDuration("update_interval")
@@ -542,6 +549,14 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	log.Infof("MQTT subscriptions complete")
 
 	m.mqttData = map[string]string{}
+
+	// Publish Home Assistant discovery immediately if VIN is configured
+	if m.vehicleVIN != "" {
+		log.Infof("Publishing Home Assistant discovery using configured VIN: %s", m.vehicleVIN)
+		m.publishHomeAssistantDiscovery(m.vehicleVIN, m.prefix, "Phev")
+		// Still publish VIN to MQTT topic
+		m.client.Publish(m.topic("/vin"), 0, true, m.vehicleVIN)
+	}
 
 	log.Infof("[Main Loop] Initial client enabled state: %v", m.enabled)
 	log.Infof("Starting connection loop to PHEV at address: %s", viper.GetString("address"))
@@ -1071,7 +1086,15 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 // Uses the vehicle VIN, so sent after VIN discovery.
 func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 
-	if m.haPublishedDiscovery || !m.haDiscovery {
+	if !m.haDiscovery {
+		return
+	}
+	
+	// Only publish once, unless VIN changes (e.g., configured VIN differs from actual VIN)
+	if m.haPublishedDiscovery {
+		if m.vehicleVIN != "" && m.vehicleVIN != vin {
+			log.Warnf("VIN from PHEV (%s) differs from configured VIN (%s) - not republishing discovery", vin, m.vehicleVIN)
+		}
 		return
 	}
 	m.haPublishedDiscovery = true
@@ -1434,6 +1457,7 @@ func init() {
 	mqttCmd.Flags().Bool("mqtt_disable_register_set_command", false, "Disable vechicle register setting via MQTT")
 	mqttCmd.Flags().Bool("ha_discovery", true, "Enable Home Assistant MQTT discovery")
 	mqttCmd.Flags().String("ha_discovery_prefix", "homeassistant", "Prefix for Home Assistant MQTT discovery")
+	mqttCmd.Flags().String("vehicle_vin", "", "Vehicle VIN for Home Assistant discovery (enables immediate discovery on startup)")
 	mqttCmd.Flags().Duration("update_interval", 5*time.Minute, "How often to request force updates")
 	mqttCmd.Flags().Bool("local_wifi_restart_enabled", false, "Enable local WiFi restart")
 	mqttCmd.Flags().Duration("wifi_restart_time", 0, "Attempt to restart Wifi if no connection for this long")
@@ -1454,6 +1478,7 @@ func init() {
 	viper.BindPFlag("mqtt_disable_register_set_command", mqttCmd.Flags().Lookup("mqtt_disable_register_set_command"))
 	viper.BindPFlag("ha_discovery", mqttCmd.Flags().Lookup("ha_discovery"))
 	viper.BindPFlag("ha_discovery_prefix", mqttCmd.Flags().Lookup("ha_discovery_prefix"))
+	viper.BindPFlag("vehicle_vin", mqttCmd.Flags().Lookup("vehicle_vin"))
 	viper.BindPFlag("update_interval", mqttCmd.Flags().Lookup("update_interval"))
 	viper.BindPFlag("local_wifi_restart_enabled", mqttCmd.Flags().Lookup("local_wifi_restart_enabled"))
 	viper.BindPFlag("wifi_restart_time", mqttCmd.Flags().Lookup("wifi_restart_time"))
