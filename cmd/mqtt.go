@@ -664,6 +664,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			return
 		}
 		m.ensureWifiOn()
+		if m.phev == nil {
+			log.Warnf("PHEV client not connected, cannot set register %02x", register[0])
+			return
+		}
 		if err := m.phev.SetRegister(register[0], data); err != nil {
 			log.Infof("Error setting register %02x: %v", register[0], err)
 			return
@@ -704,6 +708,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
 			m.ensureWifiOn()
+			if m.phev == nil {
+				log.Warnf("PHEV client not connected, cannot set parking lights")
+				return
+			}
 			if err := m.phev.SetRegister(0xb, []byte{v}); err != nil {
 				log.Infof("Error setting register 0xb: %v", err)
 				return
@@ -713,6 +721,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
 			m.ensureWifiOn()
+			if m.phev == nil {
+				log.Warnf("PHEV client not connected, cannot set headlights")
+				return
+			}
 			if err := m.phev.SetRegister(0xa, []byte{v}); err != nil {
 				log.Infof("Error setting register 0xb: %v", err)
 				return
@@ -720,6 +732,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		}
 	} else if msg.Topic() == m.topic("/set/cancelchargetimer") {
 		m.ensureWifiOn()
+		if m.phev == nil {
+			log.Warnf("PHEV client not connected, cannot cancel charge timer")
+			return
+		}
 		if err := m.phev.SetRegister(0x17, []byte{0x1}); err != nil {
 			log.Infof("Error setting register 0x17: %v", err)
 			return
@@ -732,6 +748,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		payload := strings.ToLower(string(msg.Payload()))
 		if payload == "reset" {
 			m.ensureWifiOn()
+			if m.phev == nil {
+				log.Warnf("PHEV client not connected, cannot reset climate state")
+				return
+			}
 			if err := m.phev.SetRegister(protocol.SetAckPreACTermRegister, []byte{0x1}); err != nil {
 				log.Infof("Error acknowledging Pre-AC termination: %v", err)
 				return
@@ -763,6 +783,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		}
 
 		m.ensureWifiOn()
+		if m.phev == nil {
+			log.Warnf("PHEV client not connected, cannot set climate mode")
+			return
+		}
 		if m.phev.ModelYear == client.ModelYear14 {
 			// Set the AC mode first
 			registerPayload := bytes.Repeat([]byte{0xff}, 15)
@@ -794,6 +818,10 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			}
 		}
 	} else if msg.Topic() == m.topic("/settings/dump") {
+		if m.phev == nil {
+			log.Warnf("PHEV client not connected, cannot dump settings")
+			return
+		}
 		log.Infof("CURRENT_SETTINGS:")
 		log.Infof("\n%s", m.phev.Settings.Dump())
 		m.phev.Settings.Clear()
