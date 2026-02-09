@@ -833,6 +833,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		log.Infof("CURRENT_SETTINGS:")
 		log.Infof("\n%s", m.phev.Settings.Dump())
 		m.phev.Settings.Clear()
+	} else if strings.HasPrefix(msg.Topic(), m.topic("/settings")) {
+		log.Debugf("Ignoring echoed settings topic: %s", msg.Topic())
+		return
 	} else {
 		log.Errorf("Unknown topic from mqtt: %s", msg.Topic())
 	}
