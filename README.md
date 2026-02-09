@@ -5,8 +5,9 @@ A robust MQTT gateway for Mitsubishi Outlander PHEV vehicles with Home Assistant
 Built on [buxtronix/phev2mqtt](https://github.com/buxtronix/phev2mqtt) and [CodeCutterUK/phev2mqtt](https://github.com/CodeCutterUK/phev2mqtt), this version is optimized for running on Unraid with separate VLAN support and enhanced reliability through MikroTik WiFi client bridge integration.
 
 **Container Images:**
-- Docker Hub: `hstefan/phev`
 - GitHub Container Registry: `ghcr.io/stefanh12/phev2mqtt:latest`
+- GitHub Container Registry: `ghcr.io/stefanh12/phev2mqtt:master-dev`
+
 
 ## Overview
 
