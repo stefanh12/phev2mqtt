@@ -59,7 +59,7 @@ Set via `log_level` in `.env` file. Default: `info`
 ### Home Assistant Integration
 
 **Automatic Discovery**
-The application publishes Home Assistant MQTT discovery messages for seamless integration.
+Home Assistant MQTT discovery is enabled by default. The application automatically publishes discovery messages for seamless integration with Home Assistant - no manual configuration needed. All PHEV sensors, switches, and controls will appear automatically in Home Assistant.
 
 **Vehicle VIN Configuration**
 Optionally configure your vehicle's VIN number (`vehicle_vin` in `.env`) to enable immediate Home Assistant discovery on startup, without waiting for PHEV connection. Leave empty to wait for VIN from vehicle (discovery will be delayed until first connection).
@@ -132,6 +132,20 @@ Advanced timeout parameters are available for fine-tuning system behavior. **War
 All timeout values support standard duration formats: `s` (seconds), `m` (minutes), `h` (hours).
 
 ## Deployment
+
+### Initial Setup - Vehicle Registration
+
+**First-time setup only:** Before using phev2mqtt, you must register it with your vehicle. This is a one-time process.
+
+1. Put your PHEV into registration mode (consult your vehicle manual)
+2. Set `phev_register=true` in your `.env` file
+3. Start the container
+4. Wait for successful registration (check logs)
+5. Stop the container
+6. Set `phev_register=false` in your `.env` file
+7. Restart the container for normal operation
+
+**Important:** The car registers the MAC address that connects to it. If using NAT or a WiFi bridge, ensure consistent network routing.
 
 ### Quick Start with Docker Compose
 
