@@ -104,7 +104,8 @@ func initConfig() {
 		viper.SetConfigName(".phev2mqtt")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.SetEnvPrefix("CONNECT") // Set prefix for environment variables
+	viper.AutomaticEnv()           // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
