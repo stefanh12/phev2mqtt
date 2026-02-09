@@ -10,7 +10,7 @@ Built on [buxtronix/phev2mqtt](https://github.com/buxtronix/phev2mqtt) and [Code
 
 ## Overview
 
-This version separates Home Assistant, Unraid, and the WiFi client bridge into independent components. WiFi client availability is managed by MikroTik, which monitors the PHEV connection via ping and publishes MQTT status updates. The RBSXTsq2nD client bridge is highly stable with 2020+ PHEV models and only disconnects when the vehicle is out of WiFi range.
+This version separates Home Assistant, Unraid, and the WiFi client bridge into independent components. WiFi client availability is managed by MikroTik, which monitors the PHEV connection via ping and publishes MQTT status updates. The RBSXTsq2nD client bridge is highly stable with 2020 and newer PHEV models and only disconnects when the vehicle is out of WiFi range.
 
 **Key improvements:**
 - Removed maximum connection time constraints (WiFi stability handled by MikroTik)
@@ -191,7 +191,7 @@ Leave empty if using host networking mode.
 
 ## Tested Hardware
 
-- **Vehicle:** Mitsubishi Outlander PHEV MY20 (2020+)
+- **Vehicle:** Mitsubishi Outlander PHEV Model Year 2020 (MY20) and newer
 - **WiFi Bridge:** MikroTik RBSXTsq2nD (highly recommended for stability)
 - **Server:** Unraid with separate VLAN 308
 - **Home Automation:** Home Assistant with MQTT integration
