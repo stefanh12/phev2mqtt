@@ -17,12 +17,13 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package cmd
 
 import (
-	"os"
 	"fmt"
+	"os"
+
 	log "github.com/sirupsen/logrus"
-	"github.com/wercker/journalhook"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/wercker/journalhook"
 )
 
 var (
@@ -39,6 +40,7 @@ var rootCmd = &cobra.Command{
 	Long: `See below for subcommands. For further information
 	on this tool, see https://github.com/buxtronix/phev2mqtt.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		logTimes = viper.GetBool("log_timestamps")
 		level, err := log.ParseLevel(logLevel)
 		if err != nil {
 			panic(err)
@@ -83,6 +85,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&logTimes, "log_timestamps", "t", false, "coloured logging with timestamps")
 	rootCmd.PersistentFlags().BoolVarP(&logSyslog, "log_syslog", "s", false, "plain logging to syslog instead of console")
 
+	viper.BindPFlag("log_timestamps", rootCmd.PersistentFlags().Lookup("log_timestamps"))
+
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
@@ -104,6 +108,7 @@ func initConfig() {
 		viper.SetConfigName(".phev2mqtt")
 	}
 	viper.AutomaticEnv()           // read in environment variables that match
+	viper.BindEnv("log_timestamps", "log_timestamps", "LOG_TIMESTAMPS")
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

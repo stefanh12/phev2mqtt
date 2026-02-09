@@ -872,6 +872,19 @@ func (m *mqttClient) onConfigReload() {
 		log.SetLevel(log.InfoLevel)
 	}
 
+	logTimes := viper.GetBool("log_timestamps")
+	if logTimes {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+		})
+	} else {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp:    false,
+			DisableColors:    true,
+			DisableTimestamp: true,
+		})
+	}
+
 	// Update Interval
 	m.updateInterval = viper.GetDuration("update_interval")
 	if m.updateInterval == 0 {
