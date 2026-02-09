@@ -1370,7 +1370,11 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`,
-		"%s/button/%s_reconnect_wifi/config": `{
+	}
+	
+	// Only add WiFi restart button if either local or remote WiFi restart is enabled
+	if m.localWifiRestartEnabled || m.remoteWifiRestartEnabled {
+		discoveryData["%s/button/%s_reconnect_wifi/config"] = `{
 		"name": "__NAME__ Restart Wifi connetion",
 		"icon": "mdi:timer-off",
 		"command_topic": "~/connection",
@@ -1383,8 +1387,9 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"manufacturer": "Mitsubishi",
 			"model": "Outlander PHEV"
 		},
-		"~": "__TOPIC__"}`,
+		"~": "__TOPIC__"}`
 	}
+	
 	mappings := map[string]string{
 		"__NAME__":  name,
 		"__VIN__":   vin,
