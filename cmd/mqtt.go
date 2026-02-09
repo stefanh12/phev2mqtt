@@ -1076,6 +1076,21 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 	}
 	m.haPublishedDiscovery = true
 	discoveryData := map[string]string{
+		// Connection status - shows if PHEV is connected
+		"%s/binary_sensor/%s_connection/config": `{
+		"device_class": "connectivity",
+		"name": "__NAME__ Connection",
+		"icon": "mdi:access-point",
+		"state_topic": "~/available",
+		"payload_off": "offline",
+		"payload_on": "online",
+		"unique_id": "__VIN___connection",
+		"device": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"},
+		"~": "__TOPIC__"}`,
 		// Doors.
 		"%s/binary_sensor/%s_door_locked/config": `{
 		"device_class": "lock",
@@ -1083,7 +1098,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/locked",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_locked",
 		"device": {
 			"name": "PHEV __VIN__",
@@ -1097,7 +1111,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/bonnet",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_bonnet",
 		"device": {
 			"name": "PHEV __VIN__",
@@ -1111,7 +1124,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/boot",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_boot",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1126,7 +1138,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/front_passenger",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_front_passenger",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1141,7 +1152,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/driver",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_driver",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1156,7 +1166,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/rear_left",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_rear_left",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1171,7 +1180,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/door/rear_right",
 		"payload_off": "closed",
 		"payload_on": "open",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___door_rear_right",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1188,7 +1196,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/battery/level",
 		"state_class": "measurement",
 		"unit_of_measurement": "%",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___battery_level",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1201,7 +1208,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"name": "__NAME__ Charge Remaining",
 		"state_topic": "~/charge/remaining",
 		"unit_of_measurement": "min",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___battery_charge_remaining",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1216,7 +1222,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/charge/plug",
 		"payload_on": "connected",
 		"payload_off": "unplugged",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___charger_connected",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1231,7 +1236,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/charge/charging",
 		"payload_on": "on",
 		"payload_off": "off",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___battery_charging",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1245,7 +1249,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"icon": "mdi:timer-off",
 		"state_topic": "~/battery/charging",
 		"command_topic": "~/set/cancelchargetimer",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___cancel_charge_timer",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1262,7 +1265,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"command_topic": "~/set/climate/heat",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___climate_heat",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1278,7 +1280,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"command_topic": "~/set/climate/cool",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___climate_cool",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1294,7 +1295,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"command_topic": "~/set/climate/windscreen",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___climate_windscreen",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1309,7 +1309,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 				"state_topic": "~/climate/mode",
 				"command_topic": "~/set/climate/mode",
 				"options": [ "off", "heat", "cool", "windscreen"],
-				"avty_t": "~/available",
 				"unique_id": "__VIN___climate_on",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1326,7 +1325,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"command_topic": "~/set/parkinglights",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___parkinglights",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1342,7 +1340,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"command_topic": "~/set/headlights",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___headlights",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1358,7 +1355,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/lights/interior",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___interiorlights",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1374,7 +1370,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/lights/hazard",
 		"payload_off": "off",
 		"payload_on": "on",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___hazardlights",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1393,7 +1388,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"icon": "mdi:timer-off",
 		"command_topic": "~/connection",
 		"payload_press": "restart",
-		"avty_t": "~/available",
 		"unique_id": "__VIN___restart_wifi",
 		"dev": {
 			"name": "PHEV __VIN__",
