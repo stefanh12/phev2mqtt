@@ -270,6 +270,10 @@ type mqttClient struct {
 	remoteWifiRestartMinInterval  time.Duration
 	encodingErrorResetInterval    time.Duration
 	configReloadInterval          time.Duration
+	phevStartTimeout              time.Duration
+	phevRegisterTimeout           time.Duration
+	phevTCPReadTimeout            time.Duration
+	phevTCPWriteTimeout           time.Duration
 
 	// Configuration hot reload
 	configReloader *ConfigReloader
@@ -348,6 +352,20 @@ func (m *mqttClient) validateConfig() error {
 	}
 	if m.configReloadInterval > 30*time.Second {
 		log.Warnf("config_reload_interval is very long (%v), consider using less than 30 seconds", m.configReloadInterval)
+	}
+
+	// Validate PHEV communication timeouts
+	if m.phevStartTimeout < 5*time.Second {
+		log.Warnf("phev_start_timeout is very short (%v), consider using at least 5 seconds", m.phevStartTimeout)
+	}
+	if m.phevRegisterTimeout < 3*time.Second {
+		log.Warnf("phev_register_timeout is very short (%v), consider using at least 3 seconds", m.phevRegisterTimeout)
+	}
+	if m.phevTCPReadTimeout < 5*time.Second {
+		log.Warnf("phev_tcp_read_timeout is very short (%v), consider using at least 5 seconds", m.phevTCPReadTimeout)
+	}
+	if m.phevTCPWriteTimeout < 5*time.Second {
+		log.Warnf("phev_tcp_write_timeout is very short (%v), consider using at least 5 seconds", m.phevTCPWriteTimeout)
 	}
 
 	// Validate WiFi restart settings consistency
@@ -437,6 +455,22 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.configReloadInterval = viper.GetDuration("config_reload_interval")
 	if m.configReloadInterval == 0 {
 		m.configReloadInterval = 5 * time.Second
+	}
+	m.phevStartTimeout = viper.GetDuration("phev_start_timeout")
+	if m.phevStartTimeout == 0 {
+		m.phevStartTimeout = 20 * time.Second
+	}
+	m.phevRegisterTimeout = viper.GetDuration("phev_register_timeout")
+	if m.phevRegisterTimeout == 0 {
+		m.phevRegisterTimeout = 10 * time.Second
+	}
+	m.phevTCPReadTimeout = viper.GetDuration("phev_tcp_read_timeout")
+	if m.phevTCPReadTimeout == 0 {
+		m.phevTCPReadTimeout = 30 * time.Second
+	}
+	m.phevTCPWriteTimeout = viper.GetDuration("phev_tcp_write_timeout")
+	if m.phevTCPWriteTimeout == 0 {
+		m.phevTCPWriteTimeout = 15 * time.Second
 	}
 
 	// Validate configuration
@@ -785,6 +819,22 @@ func (m *mqttClient) onConfigReload() {
 	if m.configReloadInterval == 0 {
 		m.configReloadInterval = 5 * time.Second
 	}
+	m.phevStartTimeout = viper.GetDuration("phev_start_timeout")
+	if m.phevStartTimeout == 0 {
+		m.phevStartTimeout = 20 * time.Second
+	}
+	m.phevRegisterTimeout = viper.GetDuration("phev_register_timeout")
+	if m.phevRegisterTimeout == 0 {
+		m.phevRegisterTimeout = 10 * time.Second
+	}
+	m.phevTCPReadTimeout = viper.GetDuration("phev_tcp_read_timeout")
+	if m.phevTCPReadTimeout == 0 {
+		m.phevTCPReadTimeout = 30 * time.Second
+	}
+	m.phevTCPWriteTimeout = viper.GetDuration("phev_tcp_write_timeout")
+	if m.phevTCPWriteTimeout == 0 {
+		m.phevTCPWriteTimeout = 15 * time.Second
+	}
 
 	// Validate configuration
 	if err := m.validateConfig(); err != nil {
@@ -809,7 +859,13 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	var err error
 	address := viper.GetString("address")
 	log.Debugf("Creating new PHEV client for address: %s", address)
-	m.phev, err = client.New(client.AddressOption(address))
+	m.phev, err = client.New(
+		client.AddressOption(address),
+		client.TCPReadTimeoutOption(m.phevTCPReadTimeout),
+		client.TCPWriteTimeoutOption(m.phevTCPWriteTimeout),
+		client.StartTimeoutOption(m.phevStartTimeout),
+		client.RegisterTimeoutOption(m.phevRegisterTimeout),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create PHEV client: %w", err)
 	}

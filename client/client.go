@@ -82,6 +82,12 @@ type Client struct {
 	ModelYear ModelYear
 
 	closed bool
+
+	// Configurable timeouts
+	tcpReadTimeout  time.Duration
+	tcpWriteTimeout time.Duration
+	startTimeout    time.Duration
+	registerTimeout time.Duration
 }
 
 // An Option configures the client.
@@ -94,17 +100,49 @@ func AddressOption(address string) func(*Client) {
 	}
 }
 
+// TCPReadTimeoutOption configures the TCP read timeout.
+func TCPReadTimeoutOption(timeout time.Duration) func(*Client) {
+	return func(c *Client) {
+		c.tcpReadTimeout = timeout
+	}
+}
+
+// TCPWriteTimeoutOption configures the TCP write timeout.
+func TCPWriteTimeoutOption(timeout time.Duration) func(*Client) {
+	return func(c *Client) {
+		c.tcpWriteTimeout = timeout
+	}
+}
+
+// StartTimeoutOption configures the start command timeout.
+func StartTimeoutOption(timeout time.Duration) func(*Client) {
+	return func(c *Client) {
+		c.startTimeout = timeout
+	}
+}
+
+// RegisterTimeoutOption configures the register set timeout.
+func RegisterTimeoutOption(timeout time.Duration) func(*Client) {
+	return func(c *Client) {
+		c.registerTimeout = timeout
+	}
+}
+
 // New returns a new client, not yet connected.
 func New(opts ...Option) (*Client, error) {
 	cl := &Client{
-		Recv:      make(chan *protocol.PhevMessage, 5),
-		Send:      make(chan *protocol.PhevMessage, 5),
-		Settings:  &protocol.Settings{},
-		started:   make(chan struct{}, 2),
-		listeners: []*Listener{},
-		address:   DefaultAddress,
-		key:       &protocol.SecurityKey{},
-		ModelYear: ModelYearUnknown,
+		Recv:            make(chan *protocol.PhevMessage, 5),
+		Send:            make(chan *protocol.PhevMessage, 5),
+		Settings:        &protocol.Settings{},
+		started:         make(chan struct{}, 2),
+		listeners:       []*Listener{},
+		address:         DefaultAddress,
+		key:             &protocol.SecurityKey{},
+		ModelYear:       ModelYearUnknown,
+		tcpReadTimeout:  30 * time.Second,
+		tcpWriteTimeout: 15 * time.Second,
+		startTimeout:    20 * time.Second,
+		registerTimeout: 10 * time.Second,
 	}
 	for _, o := range opts {
 		o(cl)
@@ -160,12 +198,10 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-var startTimeout = 20 * time.Second
-
 // Start waits for the client to start.
 func (c *Client) Start() error {
 	log.Debug("%%PHEV_START_AWAIT%%")
-	startTimer := time.After(startTimeout)
+	startTimer := time.After(c.startTimeout)
 	for {
 		select {
 		case _, ok := <-c.started:
@@ -194,7 +230,7 @@ func (c *Client) SetRegister(register byte, value []byte) error {
 		}
 	}
 	xor := byte(0)
-	timer := time.After(10 * time.Second)
+	timer := time.After(c.registerTimeout)
 	l := c.AddListener()
 	defer c.RemoveListener(l)
 SETREG:
@@ -307,7 +343,7 @@ func (c *Client) manage() {
 
 func (c *Client) reader() {
 	for {
-		c.conn.(*net.TCPConn).SetReadDeadline(time.Now().Add(30 * time.Second))
+		c.conn.(*net.TCPConn).SetReadDeadline(time.Now().Add(c.tcpReadTimeout))
 		data := make([]byte, 4096)
 		n, err := c.conn.Read(data)
 		if err != nil {
@@ -352,7 +388,7 @@ func (c *Client) writer() {
 			data := msg.EncodeToBytes(c.key)
 			log.Debugf("%%PHEV_TCP_SEND_MSG%%: [%02x] %s", msg.Xor, msg.ShortForm())
 			log.Tracef("%%PHEV_TCP_SEND_DATA%%: %s", hex.EncodeToString(data))
-			c.conn.(*net.TCPConn).SetWriteDeadline(time.Now().Add(15 * time.Second))
+			c.conn.(*net.TCPConn).SetWriteDeadline(time.Now().Add(c.tcpWriteTimeout))
 			if _, err := c.conn.Write(data); err != nil {
 				if !c.closed {
 					log.Errorf("%%PHEV_TCP_WRITER_ERROR%%: %v", err)
