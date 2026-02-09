@@ -645,8 +645,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (m *mqttClient) publish(topic, payload string) {
+	if cache := m.mqttData[topic]; cache == payload {
+		return
+	}
+	m.client.Publish(m.topic(topic), 0, false, payload)
 	m.mqttData[topic] = payload
-	// }
 }
 
 func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Message) {
