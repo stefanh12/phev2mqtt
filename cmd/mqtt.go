@@ -559,6 +559,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	for {
 		// Power save mode: turn WiFi on at each interval and wait for connection attempt
 		if powerSaveTicker != nil {
+			log.Debugf("[Power Save] Waiting for next update interval (%v)...", m.updateInterval)
 			<-powerSaveTicker.C // Block until ticker fires
 			// Time to turn WiFi on for next update attempt
 			log.Infof("[Power Save] Update cycle started - turning WiFi on")
@@ -569,7 +570,9 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			m.powerSaveWifiOn = true
 		}
 
+		log.Infof("[Main Loop] Client enabled status: %v", m.enabled)
 		if m.enabled {
+			log.Infof("[Main Loop] Attempting to connect to PHEV...")
 			if err := m.handlePhev(cmd); err != nil {
 				// Do not flood the log with the same messages every second
 				if m.lastError == nil || m.lastError.Error() != err.Error() {
@@ -588,6 +591,8 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 					log.Errorf("Error during WiFi restart: %v", err)
 				}
 			}
+		} else {
+			log.Warnf("[Main Loop] Client is DISABLED (m.enabled=false) - skipping connection attempt")
 		}
 
 		// Only sleep between retries when NOT in power save mode
