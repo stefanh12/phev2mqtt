@@ -1041,6 +1041,16 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 		m.publish("/registrations", fmt.Sprintf("%d", reg.Registrations))
 	case *protocol.RegisterECUVersion:
 		m.publish("/ecuversion", reg.Version)
+	case *protocol.RegisterBatteryWarning:
+		m.publish("/battery/warning", fmt.Sprintf("%d", reg.Warning))
+	case *protocol.RegisterACOperStatus:
+		m.publish("/climate/operating", boolOnOff[reg.Operating])
+	case *protocol.RegisterWIFISSID:
+		m.publish("/wifi/ssid", reg.SSID)
+	case *protocol.RegisterTime:
+		m.publish("/time", reg.Time.Format(time.RFC3339))
+	case *protocol.RegisterSettings:
+		m.publish("/settings", reg.Raw())
 	case *protocol.RegisterACMode:
 		m.climate.setMode(reg.Mode)
 		for t, p := range m.climate.mqttStates() {
@@ -1229,7 +1239,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`,
-
 		// Battery and charging
 		"%s/sensor/%s_battery_level/config": `{
 		"device_class": "battery",
@@ -1238,6 +1247,18 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_class": "measurement",
 		"unit_of_measurement": "%",
 		"unique_id": "__VIN___battery_level",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		"%s/sensor/%s_battery_warning/config": `{
+		"name": "__NAME__ Battery Warning",
+		"state_topic": "~/battery/warning",
+		"icon": "mdi:battery-alert",
+		"unique_id": "__VIN___battery_warning",
 		"dev": {
 			"name": "PHEV __VIN__",
 			"identifiers": ["phev-__VIN__"],
@@ -1299,6 +1320,21 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		},
 		"~": "__TOPIC__"}`,
 		// Climate
+		"%s/binary_sensor/%s_climate_operating/config": `{
+		"device_class": "running",
+		"name": "__NAME__ AC Operating",
+		"icon": "mdi:air-conditioner",
+		"state_topic": "~/climate/operating",
+		"payload_off": "off",
+		"payload_on": "on",
+		"unique_id": "__VIN___climate_operating",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
 		"%s/switch/%s_climate_heat/config": `{
 		"name": "__NAME__ Heat",
 		"icon": "mdi:weather-sunny",
@@ -1420,6 +1456,68 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		},
 		"~": "__TOPIC__"}`,		
 		// General topics.
+		"%s/sensor/%s_vehicle_time/config": `{
+		"name": "__NAME__ Vehicle Time",
+		"state_topic": "~/time",
+		"icon": "mdi:clock-outline",
+		"device_class": "timestamp",
+		"unique_id": "__VIN___vehicle_time",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		"%s/sensor/%s_wifi_ssid/config": `{
+		"name": "__NAME__ WiFi SSID",
+		"state_topic": "~/wifi/ssid",
+		"icon": "mdi:wifi",
+		"unique_id": "__VIN___wifi_ssid",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		"%s/sensor/%s_settings/config": `{
+		"name": "__NAME__ Settings",
+		"state_topic": "~/settings",
+		"icon": "mdi:cog",
+		"unique_id": "__VIN___settings",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		"%s/sensor/%s_registrations/config": `{
+		"name": "__NAME__ Registrations",
+		"state_topic": "~/registrations",
+		"icon": "mdi:counter",
+		"unique_id": "__VIN___registrations",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
+		"%s/sensor/%s_ecu_version/config": `{
+		"name": "__NAME__ ECU Version",
+		"state_topic": "~/ecuversion",
+		"icon": "mdi:chip",
+		"entity_category": "diagnostic",
+		"unique_id": "__VIN___ecu_version",
+		"dev": {
+			"name": "PHEV __VIN__",
+			"identifiers": ["phev-__VIN__"],
+			"manufacturer": "Mitsubishi",
+			"model": "Outlander PHEV"
+		},
+		"~": "__TOPIC__"}`,
 	}
 	
 	// Only add WiFi restart button if either local or remote WiFi restart is enabled
