@@ -183,10 +183,14 @@ func (c *Client) Close() error {
 
 // Connect connects to the Phev.
 func (c *Client) Connect() error {
+	log.Infof("[TCP Connect] Attempting TCP connection to %s", c.address)
 	conn, err := net.Dial("tcp", c.address)
 	if err != nil {
+		log.Infof("[TCP Connect] Connection failed: %v", err)
 		return err
 	}
+	log.Infof("[TCP Connect] TCP connection established to %s", c.address)
+	log.Infof("[TCP Timeouts] Read: %v, Write: %v, Start: %v, Register: %v", c.tcpReadTimeout, c.tcpWriteTimeout, c.startTimeout, c.registerTimeout)
 	log.Info("%PHEV_TCP_CONNECTED%")
 	c.closed = false
 	c.conn = conn
@@ -200,17 +204,21 @@ func (c *Client) Connect() error {
 
 // Start waits for the client to start.
 func (c *Client) Start() error {
+	log.Infof("[PHEV Start] Waiting for start handshake (timeout: %v)", c.startTimeout)
 	log.Debug("%%PHEV_START_AWAIT%%")
 	startTimer := time.After(c.startTimeout)
 	for {
 		select {
 		case _, ok := <-c.started:
 			if !ok {
+				log.Info("[PHEV Start] Start channel closed unexpectedly")
 				log.Debug("%%PHEV_START_CLOSED%%")
 				return fmt.Errorf("receiver closed before getting start request")
 			}
+			log.Info("[PHEV Start] Start handshake completed successfully")
 			log.Debug("%%PHEV_START_DONE%%")
 		case <-startTimer:
+			log.Infof("[PHEV Start] Start handshake TIMED OUT after %v", c.startTimeout)
 			log.Debug("%%PHEV_START_TIMEOUT%%")
 			return fmt.Errorf("timed out waiting for start")
 		}
@@ -342,14 +350,18 @@ func (c *Client) manage() {
 }
 
 func (c *Client) reader() {
+	log.Infof("[TCP Reader] Starting reader goroutine with read timeout: %v", c.tcpReadTimeout)
 	for {
+		log.Tracef("[TCP Reader] Setting read deadline to %v from now", c.tcpReadTimeout)
 		c.conn.(*net.TCPConn).SetReadDeadline(time.Now().Add(c.tcpReadTimeout))
 		data := make([]byte, 4096)
 		n, err := c.conn.Read(data)
 		if err != nil {
 			if !c.closed {
+				log.Infof("[TCP Reader] Read error (timeout=%v): %v", c.tcpReadTimeout, err)
 				log.Debug("%%PHEV_TCP_READER_ERROR%%: ", err)
 			}
+			log.Info("[TCP Reader] Closing reader due to error")
 			log.Debug("%PHEV_TCP_READER_CLOSE%")
 			c.Close()
 			close(c.Recv)
@@ -388,11 +400,14 @@ func (c *Client) writer() {
 			data := msg.EncodeToBytes(c.key)
 			log.Debugf("%%PHEV_TCP_SEND_MSG%%: [%02x] %s", msg.Xor, msg.ShortForm())
 			log.Tracef("%%PHEV_TCP_SEND_DATA%%: %s", hex.EncodeToString(data))
+			log.Tracef("[TCP Writer] Setting write deadline to %v from now", c.tcpWriteTimeout)
 			c.conn.(*net.TCPConn).SetWriteDeadline(time.Now().Add(c.tcpWriteTimeout))
 			if _, err := c.conn.Write(data); err != nil {
 				if !c.closed {
+					log.Infof("[TCP Writer] Write error (timeout=%v): %v", c.tcpWriteTimeout, err)
 					log.Errorf("%%PHEV_TCP_WRITER_ERROR%%: %v", err)
 				}
+				log.Info("[TCP Writer] Closing writer due to error")
 				log.Debug("%PHEV_TCP_WRITER_CLOSE%")
 				c.Close()
 				return

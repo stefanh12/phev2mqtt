@@ -176,14 +176,15 @@ func (m *mqttClient) remoteWifiEnable() {
 		message = `{"wifi": "enable"}`
 	}
 
-	log.Infof("Sending remote WiFi ENABLE command to topic: %s", m.remoteWifiControlTopic)
+	log.Infof("[WiFi Control] Enabling WiFi on remote device")
+	log.Infof("[WiFi Control] Publishing ENABLE to topic: %s with message: %s", m.remoteWifiControlTopic, message)
 
 	token := m.client.Publish(m.remoteWifiControlTopic, 0, false, message)
 	token.Wait()
 	if token.Error() != nil {
-		log.Errorf("Error publishing remote WiFi enable: %v", token.Error())
+		log.Errorf("[WiFi Control] Failed to send ENABLE command: %v", token.Error())
 	} else {
-		log.Infof("Remote WiFi ENABLE command sent successfully")
+		log.Infof("[WiFi Control] ENABLE command published successfully")
 	}
 }
 
@@ -198,14 +199,15 @@ func (m *mqttClient) remoteWifiDisable() {
 		message = `{"wifi": "disable"}`
 	}
 
-	log.Infof("Sending remote WiFi DISABLE command to topic: %s", m.remoteWifiControlTopic)
+	log.Infof("[WiFi Control] Disabling WiFi on remote device")
+	log.Infof("[WiFi Control] Publishing DISABLE to topic: %s with message: %s", m.remoteWifiControlTopic, message)
 
 	token := m.client.Publish(m.remoteWifiControlTopic, 0, false, message)
 	token.Wait()
 	if token.Error() != nil {
-		log.Errorf("Error publishing remote WiFi disable: %v", token.Error())
+		log.Errorf("[WiFi Control] Failed to send DISABLE command: %v", token.Error())
 	} else {
-		log.Infof("Remote WiFi DISABLE command sent successfully")
+		log.Infof("[WiFi Control] DISABLE command published successfully")
 	}
 }
 
@@ -559,10 +561,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		if powerSaveTicker != nil {
 			<-powerSaveTicker.C // Block until ticker fires
 			// Time to turn WiFi on for next update attempt
-			log.Debugf("Power save: turning WiFi on for update cycle")
+			log.Infof("[Power Save] Update cycle started - turning WiFi on")
 			m.remoteWifiEnable()
-			log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
+			log.Infof("[WiFi Link] Waiting %v for WiFi link to establish before attempting connection", m.remoteWifiPowerSaveWait)
 			time.Sleep(m.remoteWifiPowerSaveWait)
+			log.Infof("[WiFi Link] WiFi link establishment wait complete, ready to connect")
 			m.powerSaveWifiOn = true
 		}
 
@@ -860,10 +863,11 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 			timeSinceCommand := time.Since(m.lastCommandTime)
 			if !m.lastCommandTime.IsZero() && timeSinceCommand < m.remoteWifiCommandWait {
 				remaining := m.remoteWifiCommandWait - timeSinceCommand
-				log.Infof("Power save: keeping WiFi on for %v after command to receive status update", remaining)
+				log.Infof("[Power Save] Command recently sent, keeping WiFi on for %v to receive status update", remaining)
 				time.Sleep(remaining)
+				log.Infof("[Power Save] Command wait period complete")
 			}
-			log.Infof("Power save: turning WiFi off")
+			log.Infof("[Power Save] Connection cycle complete - turning WiFi off")
 			m.remoteWifiDisable()
 			m.powerSaveWifiOn = false
 		}
