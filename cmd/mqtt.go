@@ -1289,6 +1289,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"~": "__TOPIC__"}`,
 		"%s/switch/%s_climate_windscreen/config": `{
 		"name": "__NAME__ windscreen",
+		"icon": "mdi:car-defrost-front",
 		"state_topic": "~/climate/windscreen",
 		"command_topic": "~/set/climate/windscreen",
 		"payload_off": "off",
@@ -1301,10 +1302,10 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"manufacturer": "Mitsubishi",
 			"model": "Outlander PHEV"
 		},
-		"icon": "mdi:car-defrost-front",
 		"~": "__TOPIC__"}`,
 		"%s/select/%s_climate_on/config": `{
 				"name": "__NAME__ climate state",
+				"icon": "mdi:car-seat-heater",
 				"state_topic": "~/climate/mode",
 				"command_topic": "~/set/climate/mode",
 				"options": [ "off", "heat", "cool", "windscreen"],
@@ -1316,7 +1317,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"manufacturer": "Mitsubishi",
 			"model": "Outlander PHEV"
 		},
-				"icon": "mdi:car-seat-heater",
 				"~": "__TOPIC__"}`,
 		// Lights.
 		"%s/light/%s_parkinglights/config": `{
@@ -1384,30 +1384,12 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		},
 		"~": "__TOPIC__"}`,		
 		// General topics.
-		"%s/switch/%s_connection_enable/config": `{
-		"name": "__NAME__ Connection",
-		"icon": "mdi:connection",
-		"state_topic": "~/available",
-		"command_topic": "~/connection",
-		"payload_off": "off",
-		"payload_on": "on",
-		"state_on": "online",
-		"state_off": "offline",
-		"avty_t": "~/available",
-		"unique_id": "__VIN___connection_enable",
-		"dev": {
-			"name": "PHEV __VIN__",
-			"identifiers": ["phev-__VIN__"],
-			"manufacturer": "Mitsubishi",
-			"model": "Outlander PHEV"
-		},
-		"~": "__TOPIC__"}`,
 	}
 	
 	// Only add WiFi restart button if either local or remote WiFi restart is enabled
 	if m.localWifiRestartEnabled || m.remoteWifiRestartEnabled {
 		discoveryData["%s/button/%s_reconnect_wifi/config"] = `{
-		"name": "__NAME__ Restart Wifi connetion",
+		"name": "__NAME__ Restart Wifi Connection",
 		"icon": "mdi:timer-off",
 		"command_topic": "~/connection",
 		"payload_press": "restart",
