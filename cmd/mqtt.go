@@ -224,6 +224,59 @@ func (m *mqttClient) ensureWifiOn() {
 	}
 	// Track command time to keep WiFi on for status updates
 	m.lastCommandTime = time.Now()
+	m.requestCommandConnect()
+}
+
+func (m *mqttClient) requestCommandConnect() {
+	if !m.enabled {
+		log.Infof("[Command] Connection disabled, enabling for command")
+		m.enabled = true
+	}
+	select {
+	case m.commandWake <- struct{}{}:
+	default:
+	}
+}
+
+func (m *mqttClient) setConnected(connected bool) {
+	m.mu.Lock()
+	m.connected = connected
+	m.mu.Unlock()
+	if connected {
+		select {
+		case m.connectedCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (m *mqttClient) waitForConnection(timeout time.Duration) bool {
+	m.mu.RLock()
+	if m.connected {
+		m.mu.RUnlock()
+		return true
+	}
+	m.mu.RUnlock()
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-m.connectedCh:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func (m *mqttClient) ensureConnectedForCommand() bool {
+	m.ensureWifiOn()
+	if m.waitForConnection(m.remoteWifiPowerSaveWait + m.phevStartTimeout + 5*time.Second) {
+		return true
+	}
+	log.Warnf("Command requested but PHEV connection not ready")
+	return false
 }
 
 type mqttClient struct {
@@ -283,6 +336,9 @@ type mqttClient struct {
 	// Configuration hot reload
 	configReloader *ConfigReloader
 	mu             sync.RWMutex
+	connected      bool
+	connectedCh    chan struct{}
+	commandWake    chan struct{}
 }
 
 func (m *mqttClient) topic(topic string) string {
@@ -567,6 +623,8 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	log.Infof("MQTT subscriptions complete")
 
 	m.mqttData = map[string]string{}
+	m.connectedCh = make(chan struct{}, 1)
+	m.commandWake = make(chan struct{}, 1)
 
 	// Publish Home Assistant discovery immediately if VIN is configured
 	if m.vehicleVIN != "" {
@@ -594,14 +652,19 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		// Power save mode: turn WiFi on at each interval and wait for connection attempt
 		if powerSaveTicker != nil {
 			log.Debugf("[Power Save] Waiting for next update interval (%v)...", m.updateInterval)
-			<-powerSaveTicker.C // Block until ticker fires
-			// Time to turn WiFi on for next update attempt
-			log.Infof("[Power Save] Update cycle started - turning WiFi on")
-			m.remoteWifiEnable()
-			log.Infof("[WiFi Link] Waiting %v for WiFi link to establish before attempting connection", m.remoteWifiPowerSaveWait)
-			time.Sleep(m.remoteWifiPowerSaveWait)
-			log.Infof("[WiFi Link] WiFi link establishment wait complete, ready to connect")
-			m.powerSaveWifiOn = true
+			select {
+			case <-powerSaveTicker.C:
+				log.Infof("[Power Save] Update cycle started - turning WiFi on")
+			case <-m.commandWake:
+				log.Infof("[Command] Connection requested, preparing to connect")
+			}
+			if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && !m.powerSaveWifiOn {
+				m.remoteWifiEnable()
+				log.Infof("[WiFi Link] Waiting %v for WiFi link to establish before attempting connection", m.remoteWifiPowerSaveWait)
+				time.Sleep(m.remoteWifiPowerSaveWait)
+				log.Infof("[WiFi Link] WiFi link establishment wait complete, ready to connect")
+				m.powerSaveWifiOn = true
+			}
 		}
 
 		log.Infof("[Main Loop] Attempting to connect to PHEV...")
@@ -639,7 +702,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		// Only sleep between retries when NOT in power save mode
 		// In power save mode, we block on the ticker at the start of the loop
 		if powerSaveTicker == nil {
-			time.Sleep(m.connectionRetryInterval)
+			select {
+			case <-time.After(m.connectionRetryInterval):
+			case <-m.commandWake:
+				log.Infof("[Command] Connection requested, bypassing retry wait")
+			}
 		}
 	}
 }
@@ -671,7 +738,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			log.Infof("Bad payload [%s]: %v", msg.Payload(), err)
 			return
 		}
-		m.ensureWifiOn()
+		if !m.ensureConnectedForCommand() {
+			return
+		}
 		if m.phev == nil {
 			log.Warnf("PHEV client not connected, cannot set register %02x", register[0])
 			return
@@ -684,18 +753,8 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		payload := strings.ToLower(string(msg.Payload()))
 		log.Infof("[Connection Control] Received message on /connection topic: '%s'", payload)
 		switch payload {
-		case "off":
-			log.Infof("[Connection Control] Setting m.enabled = false (connection OFF)")
-			log.Infof("[Connection Control] WiFi control remains with power save mode")
-			m.enabled = false
-			if m.phev != nil {
-				m.phev.Close()
-			}
-			m.client.Publish(m.topic("/available"), 0, true, "offline")
-		case "on":
-			log.Infof("[Connection Control] Setting m.enabled = true (connection ON)")
-			log.Infof("[Connection Control] WiFi control remains with power save mode")
-			m.enabled = true
+		case "off", "on":
+			log.Warnf("[Connection Control] Ignoring deprecated connection command: '%s'", payload)
 		case "restart":
 			log.Infof("[Connection Control] Restarting connection (enabled=true)")
 			m.enabled = true
@@ -703,6 +762,7 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			if m.phev != nil {
 				m.phev.Close()
 			}
+			m.requestCommandConnect()
 		case "wifi_enable":
 			log.Infof("[Connection Control] Manual WiFi enable command (overrides power save temporarily)")
 			m.remoteWifiEnable()
@@ -715,7 +775,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
-			m.ensureWifiOn()
+			if !m.ensureConnectedForCommand() {
+				return
+			}
 			if m.phev == nil {
 				log.Warnf("PHEV client not connected, cannot set parking lights")
 				return
@@ -728,7 +790,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if msg.Topic() == m.topic("/set/headlights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
 		if v, ok := values[strings.ToLower(string(msg.Payload()))]; ok {
-			m.ensureWifiOn()
+			if !m.ensureConnectedForCommand() {
+				return
+			}
 			if m.phev == nil {
 				log.Warnf("PHEV client not connected, cannot set headlights")
 				return
@@ -739,7 +803,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			}
 		}
 	} else if msg.Topic() == m.topic("/set/cancelchargetimer") {
-		m.ensureWifiOn()
+		if !m.ensureConnectedForCommand() {
+			return
+		}
 		if m.phev == nil {
 			log.Warnf("PHEV client not connected, cannot cancel charge timer")
 			return
@@ -755,7 +821,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 	} else if strings.HasPrefix(msg.Topic(), m.topic("/set/climate/state")) {
 		payload := strings.ToLower(string(msg.Payload()))
 		if payload == "reset" {
-			m.ensureWifiOn()
+			if !m.ensureConnectedForCommand() {
+				return
+			}
 			if m.phev == nil {
 				log.Warnf("PHEV client not connected, cannot reset climate state")
 				return
@@ -790,7 +858,9 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 			return
 		}
 
-		m.ensureWifiOn()
+		if !m.ensureConnectedForCommand() {
+			return
+		}
 		if m.phev == nil {
 			log.Warnf("PHEV client not connected, cannot set climate mode")
 			return
@@ -979,6 +1049,7 @@ func (m *mqttClient) onConfigReload() {
 func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	// Ensure WiFi is turned off when function exits (on both success and failure)
 	defer func() {
+		m.setConnected(false)
 		m.lastConnect = time.Now()
 		// Turn WiFi off after connection ends in power save mode
 		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
@@ -1023,6 +1094,7 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	log.Infof("PHEV client started successfully")
 	m.client.Publish(m.topic("/available"), 0, true, "online")
 	log.Infof("Published availability status: online")
+	m.setConnected(true)
 
 	// Request an immediate update so HA entities get state before any power-save disconnect.
 	if err := m.phev.SetRegister(0x6, []byte{0x3}); err != nil {
@@ -1210,21 +1282,6 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 	log.Infof("[HA Discovery] Publishing Home Assistant discovery for VIN: %s", vin)
 	log.Infof("[HA Discovery] Discovery prefix: %s, MQTT topic prefix: %s", m.haDiscoveryPrefix, topic)
 	discoveryData := map[string]string{
-		// Connection status - shows if PHEV is connected
-		"%s/binary_sensor/%s_connection/config": `{
-		"device_class": "connectivity",
-		"name": "__NAME__ Connection",
-		"icon": "mdi:access-point",
-		"state_topic": "~/available",
-		"payload_off": "offline",
-		"payload_on": "online",
-		"unique_id": "__VIN___connection",
-		"device": {
-			"name": "PHEV __VIN__",
-			"identifiers": ["phev-__VIN__"],
-			"manufacturer": "Mitsubishi",
-			"model": "Outlander PHEV"},
-		"~": "__TOPIC__"}`,
 		// Doors.
 		"%s/binary_sensor/%s_door_locked/config": `{
 		"device_class": "lock",
