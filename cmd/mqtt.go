@@ -1087,17 +1087,22 @@ func (m *mqttClient) publishRegister(msg *protocol.PhevMessage) {
 func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 
 	if !m.haDiscovery {
+		log.Debugf("[HA Discovery] Home Assistant discovery disabled, skipping")
 		return
 	}
 	
 	// Only publish once, unless VIN changes (e.g., configured VIN differs from actual VIN)
 	if m.haPublishedDiscovery {
+		log.Debugf("[HA Discovery] Discovery already published, skipping")
 		if m.vehicleVIN != "" && m.vehicleVIN != vin {
-			log.Warnf("VIN from PHEV (%s) differs from configured VIN (%s) - not republishing discovery", vin, m.vehicleVIN)
+			log.Warnf("[HA Discovery] VIN from PHEV (%s) differs from configured VIN (%s) - not republishing discovery", vin, m.vehicleVIN)
 		}
 		return
 	}
 	m.haPublishedDiscovery = true
+	
+	log.Infof("[HA Discovery] Publishing Home Assistant discovery for VIN: %s", vin)
+	log.Infof("[HA Discovery] Discovery prefix: %s, MQTT topic prefix: %s", m.haDiscoveryPrefix, topic)
 	discoveryData := map[string]string{
 		// Connection status - shows if PHEV is connected
 		"%s/binary_sensor/%s_connection/config": `{
@@ -1406,6 +1411,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 	
 	// Only add WiFi restart button if either local or remote WiFi restart is enabled
 	if m.localWifiRestartEnabled || m.remoteWifiRestartEnabled {
+		log.Debugf("[HA Discovery] Adding WiFi restart button (local: %v, remote: %v)", m.localWifiRestartEnabled, m.remoteWifiRestartEnabled)
 		discoveryData["%s/button/%s_reconnect_wifi/config"] = `{
 		"name": "__NAME__ Restart Wifi Connection",
 		"icon": "mdi:timer-off",
@@ -1419,6 +1425,8 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`
+	} else {
+		log.Debugf("[HA Discovery] WiFi restart button disabled")
 	}
 	
 	mappings := map[string]string{
@@ -1426,16 +1434,27 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"__VIN__":   vin,
 		"__TOPIC__": topic,
 	}
+	
+	log.Infof("[HA Discovery] Publishing %d entity configurations", len(discoveryData))
+	successCount := 0
+	errorCount := 0
+	
 	for topic, d := range discoveryData {
 		topic = fmt.Sprintf(topic, m.haDiscoveryPrefix, vin)
 		for in, out := range mappings {
 			d = strings.Replace(d, in, out, -1)
 		}
 		if token := m.client.Publish(topic, 0, true, d); token.Wait() && token.Error() != nil {
-			log.Error(token.Error())
+			log.Errorf("[HA Discovery] Failed to publish to %s: %v", topic, token.Error())
+			errorCount++
+		} else {
+			log.Debugf("[HA Discovery] Published: %s", topic)
+			successCount++
 		}
 		//m.client.Publish(topic, 0, false, "{}")
 	}
+	
+	log.Infof("[HA Discovery] Complete - %d entities published successfully, %d errors", successCount, errorCount)
 }
 
 func init() {
