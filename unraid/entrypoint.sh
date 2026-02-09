@@ -65,6 +65,8 @@ phev_register=false
 # - debug: Detailed debug information (for troubleshooting)
 # Default: info
 log_level=info
+# Enable timestamps in logs (true/false)
+log_timestamps=false
 
 # ==========================================
 # Network Routing
@@ -162,6 +164,7 @@ EOF
 fi
 
 export CONNECT_log_level=$log_level
+export CONNECT_log_timestamps=$log_timestamps
 export CONNECT_phev_register=$phev_register
 export CONNECT_mqtt_server=$mqtt_server
 export CONNECT_mqtt_user=$mqtt_user
@@ -185,6 +188,7 @@ export CONNECT_vehicle_vin=$vehicle_vin
 
 echo "Using the following environment variables:"
 echo "log_level=$CONNECT_log_level"
+echo "log_timestamps=$CONNECT_log_timestamps"
 echo "phev_register=$CONNECT_phev_register"
 echo "mqtt_server=$CONNECT_mqtt_server"
 #echo "mqtt_user=$CONNECT_mqtt_user"
