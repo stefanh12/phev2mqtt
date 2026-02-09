@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	 "os"        
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -258,27 +258,27 @@ type mqttClient struct {
 	lastRemoteWifiRestart    time.Time
 
 	// Remote WiFi enable/disable control via MQTT
-	remoteWifiControlTopic     string
-	remoteWifiEnableMessage    string
-	remoteWifiDisableMessage       string
-	remoteWifiPowerSaveEnabled     bool
-	remoteWifiPowerSaveWait        time.Duration
-	remoteWifiPowerSaveDuration    time.Duration
-	lastUpdateTime                 time.Time
-	powerSaveWifiOn                bool
-	lastCommandTime                time.Time
-	remoteWifiCommandWait          time.Duration
+	remoteWifiControlTopic      string
+	remoteWifiEnableMessage     string
+	remoteWifiDisableMessage    string
+	remoteWifiPowerSaveEnabled  bool
+	remoteWifiPowerSaveWait     time.Duration
+	remoteWifiPowerSaveDuration time.Duration
+	lastUpdateTime              time.Time
+	powerSaveWifiOn             bool
+	lastCommandTime             time.Time
+	remoteWifiCommandWait       time.Duration
 
 	// Advanced timeout settings
-	connectionRetryInterval       time.Duration
-	availabilityOfflineTimeout    time.Duration
-	remoteWifiRestartMinInterval  time.Duration
-	encodingErrorResetInterval    time.Duration
-	configReloadInterval          time.Duration
-	phevStartTimeout              time.Duration
-	phevRegisterTimeout           time.Duration
-	phevTCPReadTimeout            time.Duration
-	phevTCPWriteTimeout           time.Duration
+	connectionRetryInterval      time.Duration
+	availabilityOfflineTimeout   time.Duration
+	remoteWifiRestartMinInterval time.Duration
+	encodingErrorResetInterval   time.Duration
+	configReloadInterval         time.Duration
+	phevStartTimeout             time.Duration
+	phevRegisterTimeout          time.Duration
+	phevTCPReadTimeout           time.Duration
+	phevTCPWriteTimeout          time.Duration
 
 	// Configuration hot reload
 	configReloader *ConfigReloader
@@ -406,19 +406,19 @@ func (m *mqttClient) validateConfig() error {
 
 func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.enabled = true // Default.
-    // Load .env file before reading config
-    configFile := GetConfigFilePath()
-    if configFile != "" {
-        log.Debugf("Loading configuration from: %s", configFile)
-        data, err := os.ReadFile(configFile)
-        if err == nil {
-            lines := parseEnvFile(string(data))
-            for key, value := range lines {
-                os.Setenv(key, value)
-            }
-            log.Debugf("Loaded %d configuration values from .env file", len(lines))
-        }
-    }
+	// Load .env file before reading config
+	configFile := GetConfigFilePath()
+	if configFile != "" {
+		log.Debugf("Loading configuration from: %s", configFile)
+		data, err := os.ReadFile(configFile)
+		if err == nil {
+			lines := parseEnvFile(string(data))
+			for key, value := range lines {
+				os.Setenv(key, value)
+			}
+			log.Debugf("Loaded %d configuration values from .env file", len(lines))
+		}
+	}
 	// MQTT Configuration
 	mqttServer := viper.GetString("mqtt_server")
 	mqttUsername := viper.GetString("mqtt_username")
@@ -624,7 +624,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 				m.enabled = true
 			}
 		}
-		
+
 		// Publish as offline if last connection was >availability_offline_timeout ago.
 		if time.Now().Sub(m.lastConnect) > m.availabilityOfflineTimeout {
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
@@ -1005,13 +1005,20 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	m.client.Publish(m.topic("/available"), 0, true, "online")
 	log.Infof("Published availability status: online")
 
+	// Request an immediate update so HA entities get state before any power-save disconnect.
+	if err := m.phev.SetRegister(0x6, []byte{0x3}); err != nil {
+		log.Infof("Error requesting initial update: %v", err)
+	} else {
+		m.lastUpdateTime = time.Now()
+	}
+
 	m.lastError = nil
 
 	var encodingErrorCount = 0
 	var lastEncodingError time.Time
 
 	updaterTicker := time.NewTicker(m.updateInterval)
-	
+
 	// In power save mode, set up a connection duration timer
 	var powerSaveTimer *time.Timer
 	if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute {
@@ -1019,7 +1026,7 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 		powerSaveTimer = time.NewTimer(m.remoteWifiPowerSaveDuration)
 		defer powerSaveTimer.Stop()
 	}
-	
+
 	for {
 		select {
 		case <-updaterTicker.C:
@@ -1170,7 +1177,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		log.Debugf("[HA Discovery] Home Assistant discovery disabled, skipping")
 		return
 	}
-	
+
 	// Only publish once, unless VIN changes (e.g., configured VIN differs from actual VIN)
 	if m.haPublishedDiscovery {
 		log.Debugf("[HA Discovery] Discovery already published, skipping")
@@ -1180,7 +1187,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		return
 	}
 	m.haPublishedDiscovery = true
-	
+
 	log.Infof("[HA Discovery] Publishing Home Assistant discovery for VIN: %s", vin)
 	log.Infof("[HA Discovery] Discovery prefix: %s, MQTT topic prefix: %s", m.haDiscoveryPrefix, topic)
 	discoveryData := map[string]string{
@@ -1441,7 +1448,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"%s/select/%s_climate_on/config": `{
 				"name": "__NAME__ climate state",
 				"icon": "mdi:car-seat-heater",
-				"state_topic": "~/climate/mode",
+				"state_topic": "~/climate/state",
 				"command_topic": "~/set/climate/mode",
 				"options": [ "off", "heat", "cool", "windscreen"],
 				"unique_id": "__VIN___climate_on",
@@ -1483,7 +1490,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"model": "Outlander PHEV"
 		},
 		"~": "__TOPIC__"}`,
-        "%s/binary_sensor/%s_interiorlights/config": `{
+		"%s/binary_sensor/%s_interiorlights/config": `{
 		"device_class": "light",
 		"name": "__NAME__ Interior Lights",
 		"icon": "mdi:lightbulb",
@@ -1512,7 +1519,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 			"manufacturer": "Mitsubishi",
 			"model": "Outlander PHEV"
 		},
-		"~": "__TOPIC__"}`,		
+		"~": "__TOPIC__"}`,
 		// General topics.
 		"%s/sensor/%s_vehicle_time/config": `{
 		"name": "__NAME__ Vehicle Time",
@@ -1581,7 +1588,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		},
 		"~": "__TOPIC__"}`,
 	}
-	
+
 	// Only add WiFi restart button if either local or remote WiFi restart is enabled
 	if m.localWifiRestartEnabled || m.remoteWifiRestartEnabled {
 		log.Debugf("[HA Discovery] Adding WiFi restart button (local: %v, remote: %v)", m.localWifiRestartEnabled, m.remoteWifiRestartEnabled)
@@ -1601,17 +1608,17 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 	} else {
 		log.Debugf("[HA Discovery] WiFi restart button disabled")
 	}
-	
+
 	mappings := map[string]string{
 		"__NAME__":  name,
 		"__VIN__":   vin,
 		"__TOPIC__": topic,
 	}
-	
+
 	log.Infof("[HA Discovery] Publishing %d entity configurations", len(discoveryData))
 	successCount := 0
 	errorCount := 0
-	
+
 	for topic, d := range discoveryData {
 		topic = fmt.Sprintf(topic, m.haDiscoveryPrefix, vin)
 		for in, out := range mappings {
@@ -1626,7 +1633,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		}
 		//m.client.Publish(topic, 0, false, "{}")
 	}
-	
+
 	log.Infof("[HA Discovery] Complete - %d entities published successfully, %d errors", successCount, errorCount)
 }
 
