@@ -125,7 +125,7 @@ func (r *ConfigReloader) reloadEnvFile() error {
 	lines := parseEnvFile(string(data))
 	for key, value := range lines {
 		// Update environment variable with CONNECT_ prefix
-		envKey := "CONNECT_" + key
+		envKey :=  key
 		os.Setenv(envKey, value)
 		log.Debugf("Updated %s=%s", envKey, value)
 	}
