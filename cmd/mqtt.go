@@ -404,7 +404,19 @@ func (m *mqttClient) validateConfig() error {
 
 func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.enabled = true // Default.
-
+    // Load .env file before reading config
+    configFile := GetConfigFilePath()
+    if configFile != "" {
+        log.Debugf("Loading configuration from: %s", configFile)
+        data, err := os.ReadFile(configFile)
+        if err == nil {
+            lines := parseEnvFile(string(data))
+            for key, value := range lines {
+                os.Setenv(key, value)
+            }
+            log.Debugf("Loaded %d configuration values from .env file", len(lines))
+        }
+    }
 	// MQTT Configuration
 	mqttServer := viper.GetString("mqtt_server")
 	mqttUsername := viper.GetString("mqtt_username")
