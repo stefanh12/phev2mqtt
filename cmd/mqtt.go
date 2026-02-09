@@ -643,7 +643,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		log.Infof("Power save mode active - managing WiFi on/off cycles")
 		powerSaveTicker = time.NewTicker(m.updateInterval)
 		defer powerSaveTicker.Stop()
-		m.powerSaveWifiOn = true // Start with WiFi on
+		m.powerSaveWifiOn = false // Start with WiFi off, enable on first cycle
 	} else {
 		powerSaveTicker = nil
 	}
