@@ -543,6 +543,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 
 	m.mqttData = map[string]string{}
 
+	log.Infof("[Main Loop] Initial client enabled state: %v", m.enabled)
 	log.Infof("Starting connection loop to PHEV at address: %s", viper.GetString("address"))
 
 	// Initialize power save timer if enabled
@@ -570,29 +571,36 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			m.powerSaveWifiOn = true
 		}
 
-		log.Infof("[Main Loop] Client enabled status: %v", m.enabled)
-		if m.enabled {
-			log.Infof("[Main Loop] Attempting to connect to PHEV...")
-			if err := m.handlePhev(cmd); err != nil {
-				// Do not flood the log with the same messages every second
-				if m.lastError == nil || m.lastError.Error() != err.Error() {
-					log.Errorf("PHEV connection error: %v", err)
-					m.lastError = err
-				}
-				// WiFi will be turned off by defer in handlePhev()
+		log.Infof("[Main Loop] Attempting to connect to PHEV...")
+		if err := m.handlePhev(cmd); err != nil {
+			// Connection failed - set enabled to false
+			if m.enabled {
+				log.Infof("[Main Loop] Connection failed, setting enabled=false")
+				m.enabled = false
 			}
-			// Publish as offline if last connection was >availability_offline_timeout ago.
-			if time.Now().Sub(m.lastConnect) > m.availabilityOfflineTimeout {
-				m.client.Publish(m.topic("/available"), 0, true, "offline")
+			// Do not flood the log with the same messages every second
+			if m.lastError == nil || m.lastError.Error() != err.Error() {
+				log.Errorf("PHEV connection error: %v", err)
+				m.lastError = err
 			}
-			// Restart Wifi interface if > wifi_restart_time.
-			if m.wifiRestartTime > 0 && time.Now().Sub(m.lastConnect) > m.wifiRestartTime {
-				if err := restartWifi(cmd, m); err != nil {
-					log.Errorf("Error during WiFi restart: %v", err)
-				}
-			}
+			// WiFi will be turned off by defer in handlePhev()
 		} else {
-			log.Warnf("[Main Loop] Client is DISABLED (m.enabled=false) - skipping connection attempt")
+			// Connection succeeded - ensure enabled is true
+			if !m.enabled {
+				log.Infof("[Main Loop] Connection succeeded, setting enabled=true")
+				m.enabled = true
+			}
+		}
+		
+		// Publish as offline if last connection was >availability_offline_timeout ago.
+		if time.Now().Sub(m.lastConnect) > m.availabilityOfflineTimeout {
+			m.client.Publish(m.topic("/available"), 0, true, "offline")
+		}
+		// Restart Wifi interface if > wifi_restart_time.
+		if m.wifiRestartTime > 0 && time.Now().Sub(m.lastConnect) > m.wifiRestartTime {
+			if err := restartWifi(cmd, m); err != nil {
+				log.Errorf("Error during WiFi restart: %v", err)
+			}
 		}
 
 		// Only sleep between retries when NOT in power save mode
@@ -634,25 +642,35 @@ func (m *mqttClient) handleIncomingMqtt(mqtt_client mqtt.Client, msg mqtt.Messag
 		}
 	} else if msg.Topic() == m.topic("/connection") {
 		payload := strings.ToLower(string(msg.Payload()))
+		log.Infof("[Connection Control] Received message on /connection topic: '%s'", payload)
 		switch payload {
 		case "off":
+			log.Infof("[Connection Control] Setting m.enabled = false (connection OFF)")
+			log.Infof("[Connection Control] WiFi control remains with power save mode")
 			m.enabled = false
 			if m.phev != nil {
 				m.phev.Close()
 			}
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
 		case "on":
+			log.Infof("[Connection Control] Setting m.enabled = true (connection ON)")
+			log.Infof("[Connection Control] WiFi control remains with power save mode")
 			m.enabled = true
 		case "restart":
+			log.Infof("[Connection Control] Restarting connection (enabled=true)")
 			m.enabled = true
 			m.client.Publish(m.topic("/available"), 0, true, "offline")
 			if m.phev != nil {
 				m.phev.Close()
 			}
 		case "wifi_enable":
+			log.Infof("[Connection Control] Manual WiFi enable command (overrides power save temporarily)")
 			m.remoteWifiEnable()
 		case "wifi_disable":
+			log.Infof("[Connection Control] Manual WiFi disable command (overrides power save temporarily)")
 			m.remoteWifiDisable()
+		default:
+			log.Warnf("[Connection Control] Unknown connection command: '%s'", payload)
 		}
 	} else if msg.Topic() == m.topic("/set/parkinglights") {
 		values := map[string]byte{"on": 0x1, "off": 0x2}
