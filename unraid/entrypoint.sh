@@ -54,12 +54,17 @@ mqtt_password=your_secure_password_here
 phev_register=false
 
 # ==========================================
-# Debug Logging
+# Log Level
 # ==========================================
-# Set to 'true' to enable detailed debug logging
-# This shows all connection attempts, MQTT messages, and protocol details
-# Set to 'false' for normal info level logging (recommended for production)
-debug=false
+# Set log level for application output
+# Valid values: none, error, warning, info, debug
+# - none: Only fatal errors
+# - error: Error messages only
+# - warning: Warnings and errors
+# - info: Normal operation info (recommended for production)
+# - debug: Detailed debug information (for troubleshooting)
+# Default: info
+log_level=info
 
 # ==========================================
 # Network Routing
@@ -148,7 +153,7 @@ EOF
     fi
 fi
 
-export CONNECT_DEBUG=$debug
+export CONNECT_log_level=$log_level
 export CONNECT_phev_register=$phev_register
 export CONNECT_mqtt_server=$mqtt_server
 export CONNECT_mqtt_user=$mqtt_user
@@ -170,7 +175,7 @@ export CONNECT_remote_wifi_power_save_wait=$remote_wifi_power_save_wait
 
 
 echo "Using the following environment variables:"
-echo "debug=$CONNECT_DEBUG"
+echo "log_level=$CONNECT_log_level"
 echo "phev_register=$CONNECT_phev_register"
 echo "mqtt_server=$CONNECT_mqtt_server"
 #echo "mqtt_user=$CONNECT_mqtt_user"
@@ -197,13 +202,13 @@ else
     echo "Warning: route_add not set. This may cause connectivity issues with the PHEV (192.168.8.0/24)"
 fi
 
-# Set log level based on debug flag
-if [[ $CONNECT_DEBUG == "true" ]]; then
-    LOG_LEVEL="debug"
-    echo "Debug logging enabled (verbosity=debug)"
-else
+# Set log level from environment variable
+if [[ -z $CONNECT_log_level ]]; then
     LOG_LEVEL="info"
+else
+    LOG_LEVEL=$CONNECT_log_level
 fi
+echo "Starting phev2mqtt with log level: $LOG_LEVEL"
 
 if [[ $CONNECT_phev_register == "true" ]]
 then

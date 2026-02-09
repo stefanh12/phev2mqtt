@@ -779,14 +779,30 @@ func (m *mqttClient) onConfigReload() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Reload log level if debug flag changed
-	debugMode := viper.GetBool("debug")
-	if debugMode {
-		log.SetLevel(log.DebugLevel)
-		log.Infof("Log level changed to: debug")
-	} else {
+	// Reload log level if log_level changed
+	logLevelStr := viper.GetString("log_level")
+	if logLevelStr == "" {
+		logLevelStr = "info" // Default to info
+	}
+	switch logLevelStr {
+	case "none":
+		log.SetLevel(log.FatalLevel) // Only fatal messages
+		log.Infof("Log level changed to: none (fatal only)")
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+		log.Infof("Log level changed to: error")
+	case "warning", "warn":
+		log.SetLevel(log.WarnLevel)
+		log.Infof("Log level changed to: warning")
+	case "info":
 		log.SetLevel(log.InfoLevel)
 		log.Infof("Log level changed to: info")
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+		log.Infof("Log level changed to: debug")
+	default:
+		log.Warnf("Unknown log level '%s', defaulting to info", logLevelStr)
+		log.SetLevel(log.InfoLevel)
 	}
 
 	// Update Interval
