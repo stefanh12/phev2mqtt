@@ -1258,6 +1258,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"name": "__NAME__ Battery Warning",
 		"state_topic": "~/battery/warning",
 		"icon": "mdi:battery-alert",
+		"entity_category": "diagnostic",
 		"unique_id": "__VIN___battery_warning",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1461,6 +1462,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"state_topic": "~/time",
 		"icon": "mdi:clock-outline",
 		"device_class": "timestamp",
+		"entity_category": "diagnostic",
 		"unique_id": "__VIN___vehicle_time",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1473,6 +1475,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"name": "__NAME__ WiFi SSID",
 		"state_topic": "~/wifi/ssid",
 		"icon": "mdi:wifi",
+		"entity_category": "diagnostic",
 		"unique_id": "__VIN___wifi_ssid",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1485,6 +1488,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"name": "__NAME__ Settings",
 		"state_topic": "~/settings",
 		"icon": "mdi:cog",
+		"entity_category": "diagnostic",
 		"unique_id": "__VIN___settings",
 		"dev": {
 			"name": "PHEV __VIN__",
@@ -1497,6 +1501,7 @@ func (m *mqttClient) publishHomeAssistantDiscovery(vin, topic, name string) {
 		"name": "__NAME__ Registrations",
 		"state_topic": "~/registrations",
 		"icon": "mdi:counter",
+		"entity_category": "diagnostic",
 		"unique_id": "__VIN___registrations",
 		"dev": {
 			"name": "PHEV __VIN__",
