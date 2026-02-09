@@ -555,19 +555,15 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	for {
-		// Power save mode: turn WiFi on at each interval
+		// Power save mode: turn WiFi on at each interval and wait for connection attempt
 		if powerSaveTicker != nil {
-			select {
-			case <-powerSaveTicker.C:
-				// Time to turn WiFi on for next update attempt
-				log.Debugf("Power save: turning WiFi on for update cycle")
-				m.remoteWifiEnable()
-				log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
-				time.Sleep(m.remoteWifiPowerSaveWait)
-				m.powerSaveWifiOn = true
-			default:
-				// Non-blocking
-			}
+			<-powerSaveTicker.C // Block until ticker fires
+			// Time to turn WiFi on for next update attempt
+			log.Debugf("Power save: turning WiFi on for update cycle")
+			m.remoteWifiEnable()
+			log.Debugf("Waiting %v for WiFi link to establish", m.remoteWifiPowerSaveWait)
+			time.Sleep(m.remoteWifiPowerSaveWait)
+			m.powerSaveWifiOn = true
 		}
 
 		if m.enabled {
@@ -577,12 +573,7 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 					log.Errorf("PHEV connection error: %v", err)
 					m.lastError = err
 				}
-				// Turn WiFi off after failed connection attempt in power save mode
-				if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
-					log.Debugf("Power save: turning WiFi off after failed connection")
-					m.remoteWifiDisable()
-					m.powerSaveWifiOn = false
-				}
+				// WiFi will be turned off by defer in handlePhev()
 			}
 			// Publish as offline if last connection was >availability_offline_timeout ago.
 			if time.Now().Sub(m.lastConnect) > m.availabilityOfflineTimeout {
@@ -596,7 +587,11 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		time.Sleep(m.connectionRetryInterval)
+		// Only sleep between retries when NOT in power save mode
+		// In power save mode, we block on the ticker at the start of the loop
+		if powerSaveTicker == nil {
+			time.Sleep(m.connectionRetryInterval)
+		}
 	}
 }
 
@@ -856,6 +851,24 @@ func (m *mqttClient) onConfigReload() {
 }
 
 func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
+	// Ensure WiFi is turned off when function exits (on both success and failure)
+	defer func() {
+		m.lastConnect = time.Now()
+		// Turn WiFi off after connection ends in power save mode
+		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
+			// Check if a command was recently sent - keep WiFi on to receive status update
+			timeSinceCommand := time.Since(m.lastCommandTime)
+			if !m.lastCommandTime.IsZero() && timeSinceCommand < m.remoteWifiCommandWait {
+				remaining := m.remoteWifiCommandWait - timeSinceCommand
+				log.Infof("Power save: keeping WiFi on for %v after command to receive status update", remaining)
+				time.Sleep(remaining)
+			}
+			log.Infof("Power save: turning WiFi off")
+			m.remoteWifiDisable()
+			m.powerSaveWifiOn = false
+		}
+	}()
+
 	var err error
 	address := viper.GetString("address")
 	log.Debugf("Creating new PHEV client for address: %s", address)
@@ -885,23 +898,6 @@ func (m *mqttClient) handlePhev(cmd *cobra.Command) error {
 	log.Infof("Published availability status: online")
 
 	m.lastError = nil
-
-	defer func() {
-		m.lastConnect = time.Now()
-		// Turn WiFi off after connection ends in power save mode
-		if m.remoteWifiPowerSaveEnabled && m.remoteWifiControlTopic != "" && m.updateInterval > time.Minute && m.powerSaveWifiOn {
-			// Check if a command was recently sent - keep WiFi on to receive status update
-			timeSinceCommand := time.Since(m.lastCommandTime)
-			if !m.lastCommandTime.IsZero() && timeSinceCommand < m.remoteWifiCommandWait {
-				remaining := m.remoteWifiCommandWait - timeSinceCommand
-				log.Infof("Power save: keeping WiFi on for %v after command to receive status update", remaining)
-				time.Sleep(remaining)
-			}
-			log.Debugf("Power save: turning WiFi off after connection ended")
-			m.remoteWifiDisable()
-			m.powerSaveWifiOn = false
-		}
-	}()
 
 	var encodingErrorCount = 0
 	var lastEncodingError time.Time
