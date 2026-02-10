@@ -1276,7 +1276,6 @@ func (m *mqttClient) onConfigReload() {
 	if err := validateMQTTMessage(m.remoteWifiDisableMessage, "remote_wifi_disable_message"); err != nil {
 		log.Errorf("Invalid remote_wifi_disable_message after reload: %v", err)
 	}
-	}
 	
 	m.remoteWifiPowerSaveEnabled = viper.GetBool("remote_wifi_power_save_enabled")
 	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
