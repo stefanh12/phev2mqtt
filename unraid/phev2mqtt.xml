@@ -3,6 +3,10 @@
   <Name>phev2mqtt</Name>
   <Repository>ghcr.io/stefanh12/phev2mqtt:latest</Repository>
   <Registry>https://github.com/stefanh12/phev2mqtt/pkgs/container/phev2mqtt</Registry>
+  <Branch>
+    <Tag>latest</Tag>
+    <TagDescription>Latest stable release</TagDescription>
+  </Branch>
   <Network>bridge</Network>
   <MyIP></MyIP>
   <Shell>sh</Shell>
