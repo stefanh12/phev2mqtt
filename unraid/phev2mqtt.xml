@@ -31,6 +31,20 @@ Requires NET_ADMIN capability for network routing. Configure your MikroTik route
 &#xD;
 GitHub: https://github.com/stefanh12/phev2mqtt
   </Overview>
+<Changes>
+### 0.3.0
+  - Fixed power save mode
+  - Command handling when wifi is disabled
+### 0.2.2
+  - Connection stability when power save mode
+  - Time stamp logging
+### 0.2.1
+  - null handling in power save mode
+### 0.2.0
+  - Enhanced logging
+  - Home Assistant integration improvements
+  - Variables for connection handling
+  </Changes>  
   <Category/>
   <WebUI/>
   <TemplateURL/>
