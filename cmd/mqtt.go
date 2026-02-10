@@ -50,9 +50,9 @@ func validateVIN(vin string) error {
 		return nil // VIN is optional
 	}
 	
-	// VIN must be exactly 17 characters (ISO 3779 standard)
-	if len(vin) != 17 {
-		return fmt.Errorf("vehicle_vin must be exactly 17 characters, got %d", len(vin))
+	// VIN must be 16 or 17 characters (17 is ISO 3779 standard, some older vehicles use 16)
+	if len(vin) != 16 && len(vin) != 17 {
+		return fmt.Errorf("vehicle_vin must be 16 or 17 characters, got %d", len(vin))
 	}
 	
 	// VIN should only contain alphanumeric (excluding I, O, Q to avoid confusion with 1, 0)
@@ -64,7 +64,7 @@ func validateVIN(vin string) error {
 		}
 	}
 	
-	log.Infof("VIN validated: %s", vin)
+	log.Infof("VIN validated: %s (%d characters)", vin, len(vin))
 	return nil
 }
 
