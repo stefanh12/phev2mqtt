@@ -1,0 +1,50 @@
+name: Sync Wiki
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'wiki/**'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync to Wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Clone wiki repository
+          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.wiki.git wiki-repo
+          
+          # Copy all markdown files from wiki directory to wiki repo
+          cp wiki/*.md wiki-repo/
+          
+          # Navigate to wiki repo
+          cd wiki-repo
+          
+          # Add all changes
+          git add .
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to sync"
+          else
+            # Commit and push changes
+            git commit -m "Auto-sync wiki from main repository
+
+Updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+Triggered by: ${{ github.sha }}"
+            git push origin master
+            echo "Wiki synced successfully"
+          fi
