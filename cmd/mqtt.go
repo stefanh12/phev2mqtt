@@ -135,7 +135,7 @@ func validateMQTTTopic(topic string, topicName string, allowWildcards bool) erro
 	
 	// Check for suspicious patterns that might indicate injection
 	suspiciousPatterns := []string{
-		"${",-
+		"${",
 		"$(",
 		"`",
 		"<script",
