@@ -3,14 +3,14 @@
   <Name>phev2mqtt</Name>
   <Repository>ghcr.io/stefanh12/phev2mqtt:latest</Repository>
   <Registry>https://github.com/stefanh12/phev2mqtt/pkgs/container/phev2mqtt</Registry>
-  <Network>br0.308</Network>
-  <MyIP>192.168.7.10</MyIP>
+  <Network>bridge</Network>
+  <MyIP></MyIP>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/stefanh12/phev2mqtt</Support>
   <Project>https://github.com/stefanh12/phev2mqtt</Project>
-  <Overview>MQTT gateway for Mitsubishi Outlander PHEV - Monitor and control your PHEV remotely via MQTT&#xD;
-&#xD;
+  <Overview>
+    MQTT gateway for Mitsubishi Outlander PHEV - Monitor and control your PHEV remotely via MQTT and Home Assistant
 This container connects to your Mitsubishi Outlander PHEV via WiFi and provides MQTT integration for home automation systems like Home Assistant. Designed to work with a MikroTik WiFi client bridge (RBSXTsq2nD) on a separate VLAN for stable connectivity.&#xD;
 &#xD;
 Features: Remote climate control, battery status monitoring, charging status, door lock control, and more.&#xD;
@@ -25,7 +25,8 @@ Settings in .env file:&#xD;
 &#xD;
 Requires NET_ADMIN capability for network routing. Configure your MikroTik router according to the documentation.&#xD;
 &#xD;
-GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
+GitHub: https://github.com/stefanh12/phev2mqtt
+  </Overview>
   <Category/>
   <WebUI/>
   <TemplateURL/>
@@ -37,10 +38,14 @@ GitHub: https://github.com/stefanh12/phev2mqtt</Overview>
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="Config Folder" Target="/config" Default="/mnt/user/appdata/phev2mqtt" Mode="rw" Description="Configuration folder - An example .env file will be created here on first start. Edit /config/.env with your settings:&#xD;
-- mqtt_server, mqtt_user, mqtt_password (REQUIRED)&#xD;
-- phev_register: 'true' to register vehicle (change back to 'false' after)&#xD;
-- debug: 'true' for debug logging, 'false' for normal logging&#xD;
-- route_add: Gateway IP for routing to PHEV network&#xD;
-Then restart the container." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/phev2mqtt</Config>
+  <Config 
+    Name="Config Folder" 
+    Target="/config" 
+    Default="/mnt/user/appdata/phev2mqtt" 
+    Mode="rw" 
+    Description="Path to store .env file" 
+    Type="Path" 
+    Display="always" 
+    Required="true" 
+    Mask="false">/mnt/user/appdata/phev2mqtt</Config>
 </Container>
