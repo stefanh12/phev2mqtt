@@ -141,6 +141,26 @@ remote_wifi_disable_message={"wifi": "disable"}
 # WiFi is turned on shortly before each update, then off after completion
 remote_wifi_power_save_enabled=false
 remote_wifi_power_save_wait=5s
+remote_wifi_power_save_duration=30s
+remote_wifi_command_wait=10s
+
+# ==========================================
+# Advanced Timeout Settings (optional)
+# ==========================================
+# WARNING: Only change these if you know what you are doing!
+# Connection and Retry Timeouts
+connection_retry_interval=60s
+availability_offline_timeout=30s
+remote_wifi_restart_min_interval=2m
+# PHEV Communication Timeouts
+phev_start_timeout=20s
+phev_register_timeout=10s
+phev_tcp_read_timeout=30s
+phev_tcp_write_timeout=15s
+# Error Handling
+encoding_error_reset_interval=15s
+# Configuration Reload
+config_reload_interval=5s
 
 # ==========================================
 # Additional Arguments (optional)
@@ -183,7 +203,20 @@ export CONNECT_remote_wifi_enable_message=$remote_wifi_enable_message
 export CONNECT_remote_wifi_disable_message=$remote_wifi_disable_message
 export CONNECT_remote_wifi_power_save_enabled=$remote_wifi_power_save_enabled
 export CONNECT_remote_wifi_power_save_wait=$remote_wifi_power_save_wait
+export CONNECT_remote_wifi_power_save_duration=$remote_wifi_power_save_duration
+export CONNECT_remote_wifi_command_wait=$remote_wifi_command_wait
 export CONNECT_vehicle_vin=$vehicle_vin
+
+# Advanced timeout settings
+export CONNECT_connection_retry_interval=$connection_retry_interval
+export CONNECT_availability_offline_timeout=$availability_offline_timeout
+export CONNECT_remote_wifi_restart_min_interval=$remote_wifi_restart_min_interval
+export CONNECT_phev_start_timeout=$phev_start_timeout
+export CONNECT_phev_register_timeout=$phev_register_timeout
+export CONNECT_phev_tcp_read_timeout=$phev_tcp_read_timeout
+export CONNECT_phev_tcp_write_timeout=$phev_tcp_write_timeout
+export CONNECT_encoding_error_reset_interval=$encoding_error_reset_interval
+export CONNECT_config_reload_interval=$config_reload_interval
 
 
 echo "Using the following environment variables:"
@@ -261,8 +294,19 @@ else
     [[ -n "$CONNECT_remote_wifi_enable_message" ]] && CMD_ARGS+=(--remote_wifi_enable_message "$CONNECT_remote_wifi_enable_message")
     [[ -n "$CONNECT_remote_wifi_disable_message" ]] && CMD_ARGS+=(--remote_wifi_disable_message "$CONNECT_remote_wifi_disable_message")
     [[ "$CONNECT_remote_wifi_power_save_enabled" == "true" ]] && CMD_ARGS+=(--remote_wifi_power_save_enabled)
-    [[ -n "$CONNECT_remote_wifi_power_save_wait" ]] && CMD_ARGS+=(--remote_wifi_power_save_wait "$CONNECT_remote_wifi_power_save_wait")
+    [[ -n "$CONNECT_remote_wifi_power_save_wait" ]] && CMD_ARGS+=(--remote_wifi_power_save_wait "$CONNECT_remote_wifi_power_save_wait")    [[ -n "$CONNECT_remote_wifi_power_save_duration" ]] && CMD_ARGS+=(--remote_wifi_power_save_duration "$CONNECT_remote_wifi_power_save_duration")
+    [[ -n "$CONNECT_remote_wifi_command_wait" ]] && CMD_ARGS+=(--remote_wifi_command_wait "$CONNECT_remote_wifi_command_wait")
     
+    # Add advanced timeout settings if set
+    [[ -n "$CONNECT_connection_retry_interval" ]] && CMD_ARGS+=(--connection_retry_interval "$CONNECT_connection_retry_interval")
+    [[ -n "$CONNECT_availability_offline_timeout" ]] && CMD_ARGS+=(--availability_offline_timeout "$CONNECT_availability_offline_timeout")
+    [[ -n "$CONNECT_remote_wifi_restart_min_interval" ]] && CMD_ARGS+=(--remote_wifi_restart_min_interval "$CONNECT_remote_wifi_restart_min_interval")
+    [[ -n "$CONNECT_phev_start_timeout" ]] && CMD_ARGS+=(--phev_start_timeout "$CONNECT_phev_start_timeout")
+    [[ -n "$CONNECT_phev_register_timeout" ]] && CMD_ARGS+=(--phev_register_timeout "$CONNECT_phev_register_timeout")
+    [[ -n "$CONNECT_phev_tcp_read_timeout" ]] && CMD_ARGS+=(--phev_tcp_read_timeout "$CONNECT_phev_tcp_read_timeout")
+    [[ -n "$CONNECT_phev_tcp_write_timeout" ]] && CMD_ARGS+=(--phev_tcp_write_timeout "$CONNECT_phev_tcp_write_timeout")
+    [[ -n "$CONNECT_encoding_error_reset_interval" ]] && CMD_ARGS+=(--encoding_error_reset_interval "$CONNECT_encoding_error_reset_interval")
+    [[ -n "$CONNECT_config_reload_interval" ]] && CMD_ARGS+=(--config_reload_interval "$CONNECT_config_reload_interval")    
     [[ -n "$CONNECT_extra_add" ]] && CMD_ARGS+=($CONNECT_extra_add)
     
     exec /usr/src/app/phev2mqtt/phev2mqtt "${CMD_ARGS[@]}"

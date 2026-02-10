@@ -11,12 +11,47 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+// Whitelist of allowed environment variable prefixes for security
+var allowedEnvPrefixes = []string{
+	"mqtt_", "phev_", "log_", "ha_", "vehicle_",
+	"update_", "wifi_", "remote_", "local_",
+	"route_", "connection_", "availability_",
+	"encoding_", "config_",
+}
+
+// isAllowedEnvVar checks if an environment variable is in the allowed list
+func isAllowedEnvVar(key string) bool {
+	key = strings.ToLower(key)
+	for _, prefix := range allowedEnvPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeEnvValue removes potentially dangerous characters from env values
+func sanitizeEnvValue(value string) string {
+	// Remove null bytes
+	value = strings.ReplaceAll(value, "\x00", "")
+	
+	// Limit length to prevent memory exhaustion
+	const maxEnvValueLength = 4096
+	if len(value) > maxEnvValueLength {
+		log.Warnf("SECURITY: Environment value truncated (exceeded %d bytes)", maxEnvValueLength)
+		value = value[:maxEnvValueLength]
+	}
+	
+	return value
+}
 
 // ConfigReloader handles hot reloading of configuration
 type ConfigReloader struct {
@@ -123,12 +158,30 @@ func (r *ConfigReloader) reloadEnvFile() error {
 
 	// Parse and set environment variables
 	lines := parseEnvFile(string(data))
+	validCount := 0
+	blockedCount := 0
+	
 	for key, value := range lines {
-		// Update environment variable with CONNECT_ prefix
-		envKey :=  key
-		os.Setenv(envKey, value)
-		log.Debugf("Updated %s=%s", envKey, value)
+		// SECURITY: Only allow whitelisted environment variables
+		if !isAllowedEnvVar(key) {
+			log.Warnf("SECURITY: Ignoring unauthorized environment variable: %s", key)
+			blockedCount++
+			continue
+		}
+		
+		// SECURITY: Sanitize value
+		value = sanitizeEnvValue(value)
+		
+		// Update environment variable
+		os.Setenv(key, value)
+		log.Debugf("Updated %s", key) // Don't log value for security
+		validCount++
 	}
+	
+	if blockedCount > 0 {
+		log.Warnf("SECURITY: Blocked %d unauthorized environment variables", blockedCount)
+	}
+	log.Debugf("Loaded %d valid environment variables", validCount)
 
 	// Tell viper to re-read environment variables
 	viper.AutomaticEnv()

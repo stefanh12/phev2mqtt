@@ -37,6 +37,194 @@ import (
 
 const defaultWifiRestartCmd = "sudo ip link set wlan0 down && sleep 3 && sudo ip link set wlan0 up"
 
+const (
+	maxMQTTMessageSize = 10240   // 10KB - reasonable for control messages
+	maxMQTTPayloadSize = 1048576 // 1MB - absolute maximum
+	minUpdateInterval  = 30 * time.Second
+	maxUpdateInterval  = 24 * time.Hour
+)
+
+// validateVIN validates Vehicle Identification Number format
+func validateVIN(vin string) error {
+	if vin == "" {
+		return nil // VIN is optional
+	}
+	
+	// VIN must be exactly 17 characters (ISO 3779 standard)
+	if len(vin) != 17 {
+		return fmt.Errorf("vehicle_vin must be exactly 17 characters, got %d", len(vin))
+	}
+	
+	// VIN should only contain alphanumeric (excluding I, O, Q to avoid confusion with 1, 0)
+	// Convert to uppercase for validation
+	vinUpper := strings.ToUpper(vin)
+	for i, ch := range vinUpper {
+		if !((ch >= 'A' && ch <= 'H') || (ch >= 'J' && ch <= 'N') || (ch >= 'P' && ch <= 'Z' && ch != 'Q') || (ch >= '0' && ch <= '9')) {
+			return fmt.Errorf("vehicle_vin contains invalid character '%c' at position %d (must be A-Z, 0-9, excluding I, O, Q)", ch, i+1)
+		}
+	}
+	
+	log.Infof("VIN validated: %s", vin)
+	return nil
+}
+
+// validateMQTTMessage validates MQTT message payload size
+func validateMQTTMessage(message, messageName string) error {
+	if message == "" {
+		return nil // Empty is allowed (will use defaults)
+	}
+	
+	if len(message) > maxMQTTPayloadSize {
+		return fmt.Errorf("%s exceeds absolute maximum (%d bytes, max %d)", 
+			messageName, len(message), maxMQTTPayloadSize)
+	}
+	
+	if len(message) > maxMQTTMessageSize {
+		log.Warnf("SECURITY WARNING: %s is large (%d bytes), consider keeping under %d bytes", 
+			messageName, len(message), maxMQTTMessageSize)
+	}
+	
+	return nil
+}
+
+// validateMQTTTopic validates MQTT topic format for security
+func validateMQTTTopic(topic string, topicName string, allowWildcards bool) error {
+	if topic == "" {
+		return nil // Optional topics can be empty
+	}
+	
+	// Check length - MQTT spec allows up to 65535 bytes
+	if len(topic) > 65535 {
+		return fmt.Errorf("%s is too long (max 65535 bytes)", topicName)
+	}
+	
+	// Reasonable practical limit
+	if len(topic) > 512 {
+		log.Warnf("SECURITY WARNING: %s is very long (%d chars), this may be suspicious", topicName, len(topic))
+	}
+	
+	// Check for null bytes
+	if strings.Contains(topic, "\x00") {
+		return fmt.Errorf("%s contains null bytes", topicName)
+	}
+	
+	// Check for wildcards if not allowed
+	if !allowWildcards {
+		if strings.Contains(topic, "+") {
+			return fmt.Errorf("%s cannot contain single-level wildcard (+)", topicName)
+		}
+		if strings.Contains(topic, "#") {
+			return fmt.Errorf("%s cannot contain multi-level wildcard (#)", topicName)
+		}
+	}
+	
+	// Check for invalid MQTT topic characters (control characters except tab)
+	for i, r := range topic {
+		if r < 0x20 && r != 0x09 { // Control chars except tab
+			return fmt.Errorf("%s contains invalid control character at position %d", topicName, i)
+		}
+	}
+	
+	// MQTT topics shouldn't start or end with /
+	if strings.HasPrefix(topic, "/") {
+		log.Warnf("SECURITY WARNING: %s starts with '/', this is unusual", topicName)
+	}
+	if strings.HasSuffix(topic, "/") && !strings.HasSuffix(topic, "/#") {
+		log.Warnf("SECURITY WARNING: %s ends with '/', this is unusual", topicName)
+	}
+	
+	// Check for suspicious patterns that might indicate injection
+	suspiciousPatterns := []string{
+		"${",-
+		"$(",
+		"`",
+		"<script",
+		"javascript:",
+	}
+	lowerTopic := strings.ToLower(topic)
+	for _, pattern := range suspiciousPatterns {
+		if strings.Contains(lowerTopic, pattern) {
+			return fmt.Errorf("%s contains suspicious pattern: %q", topicName, pattern)
+		}
+	}
+	
+	return nil
+}
+
+// validateMQTTCredentials performs security validation on MQTT configuration
+func validateMQTTCredentials(server, password string) error {
+	// Validate MQTT server URL
+	if server == "" {
+		return fmt.Errorf("mqtt_server is required")
+	}
+	
+	// Check for valid protocol prefix
+	if !strings.HasPrefix(server, "tcp://") && 
+	   !strings.HasPrefix(server, "ssl://") && 
+	   !strings.HasPrefix(server, "tls://") && 
+	   !strings.HasPrefix(server, "ws://") && 
+	   !strings.HasPrefix(server, "wss://") {
+		return fmt.Errorf("mqtt_server must start with tcp://, ssl://, tls://, ws://, or wss://")
+	}
+	
+	// Warn if using unencrypted connection
+	if strings.HasPrefix(server, "tcp://") || strings.HasPrefix(server, "ws://") {
+		log.Warnf("SECURITY WARNING: MQTT connection is not encrypted (using %s). Consider using ssl:// or tls://", 
+			server[:6])
+	}
+	
+	// Extract and validate port
+	serverPart := server
+	if idx := strings.Index(server, "://"); idx != -1 {
+		serverPart = server[idx+3:]
+	}
+	
+	// Check for port
+	if strings.Contains(serverPart, ":") {
+		parts := strings.Split(serverPart, ":")
+		if len(parts) == 2 {
+			portStr := parts[1]
+			// Remove any path components
+			if idx := strings.Index(portStr, "/"); idx != -1 {
+				portStr = portStr[:idx]
+			}
+			port := 0
+			if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
+				return fmt.Errorf("invalid port in mqtt_server: %s", portStr)
+			}
+			if port < 1 || port > 65535 {
+				return fmt.Errorf("invalid port in mqtt_server: must be 1-65535, got %d", port)
+			}
+		}
+	}
+	
+	// Validate MQTT password
+	if password == "" {
+		return fmt.Errorf("mqtt_password is required for security")
+	}
+	
+	if len(password) < 8 {
+		return fmt.Errorf("mqtt_password is too weak (minimum 8 characters required)")
+	}
+	
+	if len(password) < 12 {
+		log.Warnf("SECURITY WARNING: mqtt_password is short (<%d chars). Consider using at least 12 characters.", len(password))
+	}
+	
+	// Check for common weak passwords
+	weakPasswords := []string{
+		"password", "12345678", "123456789", "admin123", "password123",
+		"mqtt1234", "test1234", "testpass", "admin", "mqtt",
+	}
+	for _, weak := range weakPasswords {
+		if strings.ToLower(password) == weak {
+			return fmt.Errorf("mqtt_password is too weak (common password detected)")
+		}
+	}
+	
+	return nil
+}
+
 // mqttCmd represents the mqtt command
 var mqttCmd = &cobra.Command{
 	Use:   "mqtt",
@@ -111,12 +299,49 @@ func (c *climate) mqttStates() map[string]string {
 
 var lastWifiRestart time.Time
 
+// validateWifiRestartCommand checks for dangerous patterns in restart commands
+func validateWifiRestartCommand(cmd string) error {
+	if cmd == "" {
+		return nil
+	}
+	
+	// Check for dangerous shell operators that could be used for command injection
+	dangerousPatterns := []string{
+		";", "|", "&", "$(", "`", ">", "<", "\n", "\r",
+	}
+	
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(cmd, pattern) {
+			// Allow && for chaining commands, but warn
+			if pattern == "&" && strings.Contains(cmd, "&&") {
+				log.Warnf("SECURITY: wifi_restart_command contains command chaining (&&). Ensure this is intentional.")
+				continue
+			}
+			return fmt.Errorf("command contains potentially dangerous pattern: %q", pattern)
+		}
+	}
+	
+	// Check command length to prevent buffer issues
+	if len(cmd) > 1024 {
+		return fmt.Errorf("command too long (max 1024 characters)")
+	}
+	
+	return nil
+}
+
 func restartWifi(cmd *cobra.Command, m *mqttClient) error {
 	// Check if local WiFi restart is enabled
 	localEnabled := viper.GetBool("local_wifi_restart_enabled")
 	restartCommand := viper.GetString("wifi_restart_command")
 
 	if localEnabled && restartCommand != "" {
+		// Security: Validate command to prevent command injection
+		if err := validateWifiRestartCommand(restartCommand); err != nil {
+			log.Errorf("SECURITY: Invalid wifi_restart_command: %v", err)
+			log.Errorf("SECURITY: Command rejected to prevent potential command injection")
+			return err
+		}
+		
 		log.Infof("Attempting to restart local WiFi interface")
 		restartCmd := exec.Command("/bin/sh", "-c", restartCommand)
 		stdoutStderr, err := restartCmd.CombinedOutput()
@@ -352,13 +577,23 @@ func (m *mqttClient) validateConfig() error {
 		return fmt.Errorf("mqtt_server is required but not set")
 	}
 
-	// Validate update_interval is positive
+	// SECURITY: Enforce update_interval bounds to prevent abuse
 	if m.updateInterval <= 0 {
 		log.Warnf("update_interval is invalid (%v), using default of 5 minutes", m.updateInterval)
 		m.updateInterval = 5 * time.Minute
 	}
-	if m.updateInterval < 30*time.Second {
-		log.Warnf("update_interval is very short (%v), consider using at least 30 seconds", m.updateInterval)
+	if m.updateInterval < minUpdateInterval {
+		log.Warnf("SECURITY: update_interval (%v) is below minimum (%v), enforcing minimum", 
+			m.updateInterval, minUpdateInterval)
+		m.updateInterval = minUpdateInterval
+	}
+	if m.updateInterval > maxUpdateInterval {
+		log.Warnf("SECURITY: update_interval (%v) exceeds maximum (%v), enforcing maximum", 
+			m.updateInterval, maxUpdateInterval)
+		m.updateInterval = maxUpdateInterval
+	}
+	if m.updateInterval < 5*time.Minute {
+		log.Warnf("SECURITY WARNING: update_interval is short (%v), this may drain vehicle battery", m.updateInterval)
 	}
 
 	// Validate wifi_restart_time if set
@@ -469,10 +704,28 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 		data, err := os.ReadFile(configFile)
 		if err == nil {
 			lines := parseEnvFile(string(data))
+			validCount := 0
+			blockedCount := 0
+			
 			for key, value := range lines {
+				// SECURITY: Only allow whitelisted environment variables
+				if !isAllowedEnvVar(key) {
+					log.Warnf("SECURITY: Ignoring unauthorized environment variable: %s", key)
+					blockedCount++
+					continue
+				}
+				
+				// SECURITY: Sanitize value
+				value = sanitizeEnvValue(value)
+				
 				os.Setenv(key, value)
+				validCount++
 			}
-			log.Debugf("Loaded %d configuration values from .env file", len(lines))
+			
+			if blockedCount > 0 {
+				log.Warnf("SECURITY: Blocked %d unauthorized environment variables", blockedCount)
+			}
+			log.Debugf("Loaded %d valid configuration values from .env file", validCount)
 		}
 	}
 	// MQTT Configuration
@@ -482,10 +735,25 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	mqttDisableSet := viper.GetBool("mqtt_disable_register_set_command")
 	m.prefix = viper.GetString("mqtt_topic_prefix")
 
+	// SECURITY: Validate MQTT credentials
+	if err := validateMQTTCredentials(mqttServer, mqttPassword); err != nil {
+		return fmt.Errorf("MQTT configuration validation failed: %w", err)
+	}
+	
+	// SECURITY: Validate MQTT topic prefix
+	if err := validateMQTTTopic(m.prefix, "mqtt_topic_prefix", false); err != nil {
+		return fmt.Errorf("invalid mqtt_topic_prefix: %w", err)
+	}
+
 	// Home Assistant Integration
 	m.haDiscovery = viper.GetBool("ha_discovery")
 	m.haDiscoveryPrefix = viper.GetString("ha_discovery_prefix")
 	m.vehicleVIN = viper.GetString("vehicle_vin")
+	
+	// SECURITY: Validate VIN format
+	if err := validateVIN(m.vehicleVIN); err != nil {
+		return fmt.Errorf("invalid vehicle_vin: %w", err)
+	}
 
 	// Update Interval
 	m.updateInterval = viper.GetDuration("update_interval")
@@ -499,11 +767,31 @@ func (m *mqttClient) Run(cmd *cobra.Command, args []string) error {
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
 	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+	
+	// SECURITY: Validate MQTT topics and messages
+	if err := validateMQTTTopic(m.remoteWifiRestartTopic, "remote_wifi_restart_topic", false); err != nil {
+		return fmt.Errorf("invalid remote_wifi_restart_topic: %w", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiRestartMessage, "remote_wifi_restart_message"); err != nil {
+		return fmt.Errorf("invalid remote_wifi_restart_message: %w", err)
+	}
 
 	// Remote WiFi Power Control Configuration
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
+	
+	// SECURITY: Validate MQTT topics and messages
+	if err := validateMQTTTopic(m.remoteWifiControlTopic, "remote_wifi_control_topic", false); err != nil {
+		return fmt.Errorf("invalid remote_wifi_control_topic: %w", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiEnableMessage, "remote_wifi_enable_message"); err != nil {
+		return fmt.Errorf("invalid remote_wifi_enable_message: %w", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiDisableMessage, "remote_wifi_disable_message"); err != nil {
+		return fmt.Errorf("invalid remote_wifi_disable_message: %w", err)
+	}
+	
 	m.remoteWifiPowerSaveEnabled = viper.GetBool("remote_wifi_power_save_enabled")
 	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
 	if m.remoteWifiPowerSaveWait == 0 {
@@ -955,12 +1243,6 @@ func (m *mqttClient) onConfigReload() {
 		})
 	}
 
-	// Update Interval
-	m.updateInterval = viper.GetDuration("update_interval")
-	if m.updateInterval == 0 {
-		m.updateInterval = 5 * time.Minute
-	}
-
 	// Local WiFi Restart Configuration
 	m.wifiRestartTime = viper.GetDuration("wifi_restart_time")
 	m.wifiRestartCommand = viper.GetString("wifi_restart_command")
@@ -970,11 +1252,32 @@ func (m *mqttClient) onConfigReload() {
 	m.remoteWifiRestartEnabled = viper.GetBool("remote_wifi_restart_enabled")
 	m.remoteWifiRestartTopic = viper.GetString("remote_wifi_restart_topic")
 	m.remoteWifiRestartMessage = viper.GetString("remote_wifi_restart_message")
+	
+	// SECURITY: Validate MQTT topics and messages (log warning on reload, don't fail)
+	if err := validateMQTTTopic(m.remoteWifiRestartTopic, "remote_wifi_restart_topic", false); err != nil {
+		log.Errorf("Invalid remote_wifi_restart_topic after reload: %v", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiRestartMessage, "remote_wifi_restart_message"); err != nil {
+		log.Errorf("Invalid remote_wifi_restart_message after reload: %v", err)
+	}
 
 	// Remote WiFi Power Control Configuration
 	m.remoteWifiControlTopic = viper.GetString("remote_wifi_control_topic")
 	m.remoteWifiEnableMessage = viper.GetString("remote_wifi_enable_message")
 	m.remoteWifiDisableMessage = viper.GetString("remote_wifi_disable_message")
+	
+	// SECURITY: Validate MQTT topics and messages (log warning on reload, don't fail)
+	if err := validateMQTTTopic(m.remoteWifiControlTopic, "remote_wifi_control_topic", false); err != nil {
+		log.Errorf("Invalid remote_wifi_control_topic after reload: %v", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiEnableMessage, "remote_wifi_enable_message"); err != nil {
+		log.Errorf("Invalid remote_wifi_enable_message after reload: %v", err)
+	}
+	if err := validateMQTTMessage(m.remoteWifiDisableMessage, "remote_wifi_disable_message"); err != nil {
+		log.Errorf("Invalid remote_wifi_disable_message after reload: %v", err)
+	}
+	}
+	
 	m.remoteWifiPowerSaveEnabled = viper.GetBool("remote_wifi_power_save_enabled")
 	m.remoteWifiPowerSaveWait = viper.GetDuration("remote_wifi_power_save_wait")
 	if m.remoteWifiPowerSaveWait == 0 {
@@ -1746,6 +2049,18 @@ func init() {
 	mqttCmd.Flags().Bool("remote_wifi_power_save_enabled", false, "Enable power save mode to turn WiFi off between updates")
 	mqttCmd.Flags().Duration("remote_wifi_power_save_wait", 5*time.Second, "Time to wait after turning WiFi on for link to establish")
 	mqttCmd.Flags().Duration("remote_wifi_power_save_duration", 30*time.Second, "How long to stay connected to collect data before disconnecting in power save mode")
+	mqttCmd.Flags().Duration("remote_wifi_command_wait", 10*time.Second, "Time to keep WiFi on after sending a command to receive status updates")
+
+	// Advanced timeout settings
+	mqttCmd.Flags().Duration("connection_retry_interval", 60*time.Second, "Time to wait between connection retry attempts")
+	mqttCmd.Flags().Duration("availability_offline_timeout", 30*time.Second, "Time without connection before publishing MQTT offline status")
+	mqttCmd.Flags().Duration("remote_wifi_restart_min_interval", 2*time.Minute, "Minimum time between remote WiFi restart attempts")
+	mqttCmd.Flags().Duration("phev_start_timeout", 20*time.Second, "Timeout waiting for PHEV to respond to start command")
+	mqttCmd.Flags().Duration("phev_register_timeout", 10*time.Second, "Timeout waiting for register set acknowledgment")
+	mqttCmd.Flags().Duration("phev_tcp_read_timeout", 30*time.Second, "TCP read deadline for PHEV connection")
+	mqttCmd.Flags().Duration("phev_tcp_write_timeout", 15*time.Second, "TCP write deadline for PHEV connection")
+	mqttCmd.Flags().Duration("encoding_error_reset_interval", 15*time.Second, "Time after which encoding error count resets")
+	mqttCmd.Flags().Duration("config_reload_interval", 5*time.Second, "How often to check for configuration file changes")
 
 	viper.BindPFlag("mqtt_server", mqttCmd.Flags().Lookup("mqtt_server"))
 	viper.BindPFlag("mqtt_username", mqttCmd.Flags().Lookup("mqtt_username"))
@@ -1768,4 +2083,14 @@ func init() {
 	viper.BindPFlag("remote_wifi_power_save_enabled", mqttCmd.Flags().Lookup("remote_wifi_power_save_enabled"))
 	viper.BindPFlag("remote_wifi_power_save_wait", mqttCmd.Flags().Lookup("remote_wifi_power_save_wait"))
 	viper.BindPFlag("remote_wifi_power_save_duration", mqttCmd.Flags().Lookup("remote_wifi_power_save_duration"))
+	viper.BindPFlag("remote_wifi_command_wait", mqttCmd.Flags().Lookup("remote_wifi_command_wait"))
+	viper.BindPFlag("connection_retry_interval", mqttCmd.Flags().Lookup("connection_retry_interval"))
+	viper.BindPFlag("availability_offline_timeout", mqttCmd.Flags().Lookup("availability_offline_timeout"))
+	viper.BindPFlag("remote_wifi_restart_min_interval", mqttCmd.Flags().Lookup("remote_wifi_restart_min_interval"))
+	viper.BindPFlag("phev_start_timeout", mqttCmd.Flags().Lookup("phev_start_timeout"))
+	viper.BindPFlag("phev_register_timeout", mqttCmd.Flags().Lookup("phev_register_timeout"))
+	viper.BindPFlag("phev_tcp_read_timeout", mqttCmd.Flags().Lookup("phev_tcp_read_timeout"))
+	viper.BindPFlag("phev_tcp_write_timeout", mqttCmd.Flags().Lookup("phev_tcp_write_timeout"))
+	viper.BindPFlag("encoding_error_reset_interval", mqttCmd.Flags().Lookup("encoding_error_reset_interval"))
+	viper.BindPFlag("config_reload_interval", mqttCmd.Flags().Lookup("config_reload_interval"))
 }

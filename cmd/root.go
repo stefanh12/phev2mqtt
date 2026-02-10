@@ -19,6 +19,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -33,6 +35,40 @@ var (
 	logSyslog bool
 )
 
+// validateConfigPath validates config file path for security
+func validateConfigPath(cfgFile string) error {
+	if cfgFile == "" {
+		return nil
+	}
+	
+	// Clean and validate path
+	cleanPath := filepath.Clean(cfgFile)
+	
+	// Check for path traversal attempts
+	if strings.Contains(cfgFile, "..") {
+		return fmt.Errorf("config file path cannot contain '..'")
+	}
+	
+	// Verify file exists and is readable
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return fmt.Errorf("config file not accessible: %w", err)
+	}
+	
+	// Verify it's a regular file
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("config file must be a regular file, not a directory or special file")
+	}
+	
+	// Check file size (prevent reading huge files that could cause DoS)
+	const maxConfigFileSize = 1048576 // 1MB
+	if info.Size() > maxConfigFileSize {
+		return fmt.Errorf("config file too large (max 1MB)")
+	}
+	
+	return nil
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "phev2mqtt",
@@ -41,11 +77,27 @@ var rootCmd = &cobra.Command{
 	on this tool, see https://github.com/buxtronix/phev2mqtt.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		logTimes = viper.GetBool("log_timestamps")
+		
+		// SECURITY: Validate log level before parsing to prevent panic
+		validLogLevels := map[string]bool{
+			"panic": true, "fatal": true, "error": true,
+			"warning": true, "warn": true, "info": true,
+			"debug": true, "trace": true,
+		}
+		
+		if !validLogLevels[strings.ToLower(logLevel)] {
+			fmt.Fprintf(os.Stderr, "Invalid log level '%s', using 'info'. Valid levels: panic, fatal, error, warning, info, debug, trace\n", logLevel)
+			logLevel = "info"
+		}
+		
 		level, err := log.ParseLevel(logLevel)
 		if err != nil {
-			panic(err)
+			// Should not happen after validation, but handle gracefully
+			fmt.Fprintf(os.Stderr, "Failed to parse log level, using info: %v\n", err)
+			log.SetLevel(log.InfoLevel)
+		} else {
+			log.SetLevel(level)
 		}
-		log.SetLevel(level)
 		if logSyslog {
 			journalhook.Enable()
 		}
@@ -95,6 +147,12 @@ func init() {
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
+		// SECURITY: Validate config file path
+		if err := validateConfigPath(cfgFile); err != nil {
+			fmt.Fprintf(os.Stderr, "SECURITY ERROR: Invalid config file: %v\n", err)
+			os.Exit(1)
+		}
+		
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {

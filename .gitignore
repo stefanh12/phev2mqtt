@@ -15,3 +15,4 @@ phev2mqtt
 
 # Go workspace file
 go.work
+SECURITY_AUDIT.md
