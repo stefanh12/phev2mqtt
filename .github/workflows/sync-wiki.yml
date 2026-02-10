@@ -41,10 +41,7 @@ jobs:
             echo "No changes to sync"
           else
             # Commit and push changes
-            git commit -m "Auto-sync wiki from main repository
-
-Updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-Triggered by: ${{ github.sha }}"
+            git commit -m "Auto-sync wiki from main repository - Updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC') - Triggered by: ${{ github.sha }}"
             git push origin master
             echo "Wiki synced successfully"
           fi
