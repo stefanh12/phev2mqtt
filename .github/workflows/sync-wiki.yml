@@ -7,6 +7,9 @@ on:
       - 'wiki/**'
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
